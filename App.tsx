@@ -25,7 +25,7 @@ import CommandPalette from './components/CommandPalette';
 import { User, Booking, Asset, Notification, Account, Transaction, Client, Package, StudioConfig, BookingTask, ActivityLog, PublicBookingSubmission, StudioRoom, ProjectStatus, OnboardingData, Role } from './types';
 import { STUDIO_CONFIG, USERS, ACCOUNTS, PACKAGES, ASSETS, CLIENTS, BOOKINGS, TRANSACTIONS, NOTIFICATIONS } from './data';
 import { auth, db, onAuthStateChanged, signOut } from './firebase';
-import { collection, onSnapshot, doc, setDoc, updateDoc, addDoc, deleteDoc, query, where, writeBatch, getDoc } from 'firebase/firestore';
+import { collection, onSnapshot, doc, setDoc, updateDoc, addDoc, deleteDoc, query, where, writeBatch, getDoc, orderBy, limit } from 'firebase/firestore';
 import { ShieldAlert } from 'lucide-react';
 
 const INITIAL_CONFIG = STUDIO_CONFIG;
@@ -169,17 +169,35 @@ const App: React.FC = () => {
             // Fix: Fallback to user.uid if role logic fails or for simple single-user setup
             const ownerId = userData.role === 'OWNER' ? user.uid : user.uid; 
             
-            // Config Listener
+            // SCALABILITY FIX: Date Range Querying
+            // Only fetch active bookings/transactions (e.g., +/- 60 days) to prevent "God Component" bloat
+            const today = new Date();
+            const startRange = new Date();
+            startRange.setDate(today.getDate() - 60); // Last 2 months
+            const endRange = new Date();
+            endRange.setDate(today.getDate() + 90); // Next 3 months
+            
+            const startIso = startRange.toISOString().split('T')[0];
+            const endIso = endRange.toISOString().split('T')[0];
+
+            // Config Listener (Single Doc - Cheap)
             const configRef = doc(db, "studios", ownerId);
             onSnapshot(configRef, (doc) => {
                 if (doc.exists()) setConfig(doc.data() as StudioConfig);
             }, (error) => console.warn("Config listener error:", error));
 
-            // Data Listeners
-            const qBookings = query(collection(db, "bookings"), where("ownerId", "==", ownerId));
+            // Data Listeners - OPTIMIZED WITH QUERY
+            const qBookings = query(
+                collection(db, "bookings"), 
+                where("ownerId", "==", ownerId),
+                where("date", ">=", startIso),
+                where("date", "<=", endIso)
+            );
             onSnapshot(qBookings, (snap) => setBookings(snap.docs.map(d => d.data() as Booking)), (error) => console.warn("Bookings listener error:", error));
 
-            const qClients = query(collection(db, "clients"), where("ownerId", "==", ownerId));
+            // Clients: Typically smaller collection, or fetch on demand. Keeping global for now for Search.
+            // Ideally should be search-indexed (Algolia/Typesense) for scale.
+            const qClients = query(collection(db, "clients"), where("ownerId", "==", ownerId), limit(100));
             onSnapshot(qClients, (snap) => setClients(snap.docs.map(d => d.data() as Client)), (error) => console.warn("Clients listener error:", error));
 
             const qAssets = query(collection(db, "assets"), where("ownerId", "==", ownerId));
@@ -196,7 +214,13 @@ const App: React.FC = () => {
             const qPackages = query(collection(db, "packages"), where("ownerId", "==", ownerId));
             onSnapshot(qPackages, (snap) => setPackages(snap.docs.map(d => d.data() as Package)), (error) => console.warn("Packages listener error:", error));
 
-            const qTransactions = query(collection(db, "transactions"), where("ownerId", "==", ownerId));
+            // Optimized Transactions Query
+            const qTransactions = query(
+                collection(db, "transactions"), 
+                where("ownerId", "==", ownerId),
+                where("date", ">=", startRange.toISOString()),
+                limit(200) // Hard limit to prevent explosion
+            );
             onSnapshot(qTransactions, (snap) => setTransactions(snap.docs.map(d => d.data() as Transaction)), (error) => console.warn("Transactions listener error:", error));
             
             const qUsers = query(collection(db, "users")); 
@@ -398,6 +422,37 @@ const App: React.FC = () => {
       } catch (e) { console.error(e); }
   };
 
+  const handleAddTransaction = async (data: { description: string; amount: number; category: string; accountId: string; bookingId?: string }) => {
+      try {
+          const authUser = auth.currentUser;
+          if (!authUser) return;
+          
+          const tid = `t-${Date.now()}`;
+          const newTransaction: Transaction = {
+              id: tid,
+              date: new Date().toISOString(),
+              description: data.description,
+              amount: data.amount,
+              type: 'EXPENSE', // Defaulting to EXPENSE as this is used by refund usually
+              accountId: data.accountId,
+              category: data.category,
+              status: 'COMPLETED',
+              bookingId: data.bookingId,
+              ownerId: authUser.uid
+          };
+          
+          await setDoc(doc(db, "transactions", tid), newTransaction);
+          
+          // Update Account Balance
+          const accRef = doc(db, "accounts", data.accountId);
+          const accSnap = await getDoc(accRef);
+          if (accSnap.exists()) {
+              const currentBal = accSnap.data().balance || 0;
+              await updateDoc(accRef, { balance: currentBal - data.amount });
+          }
+      } catch(e) { console.error(e); }
+  };
+
   if (loading) return (
       <div className="min-h-screen bg-lumina-base flex items-center justify-center">
           <motion.div 
@@ -562,6 +617,7 @@ const App: React.FC = () => {
         onAddBooking={handleAddBooking}
         onAddClient={handleAddClient}
         initialData={bookingPrefill}
+        googleToken={googleToken}
       />
 
       <ProjectDrawer
@@ -577,10 +633,13 @@ const App: React.FC = () => {
             await deleteDoc(doc(db, "bookings", id));
             setIsProjectDrawerOpen(false);
         }}
+        onAddTransaction={handleAddTransaction}
         config={config}
         packages={packages}
         currentUser={currentUser}
         assets={assets}
+        users={users}
+        accounts={accounts}
         googleToken={googleToken}
       />
 

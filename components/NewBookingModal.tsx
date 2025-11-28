@@ -3,9 +3,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { User, Account, Booking, Client, StudioConfig, Asset, Package } from '../types';
 import { PACKAGES } from '../data';
-import { X, Search, ChevronRight, ChevronLeft, Calendar, Clock, User as UserIcon, CheckCircle2, AlertCircle, Plus, DollarSign, Briefcase, MapPin, Loader2, Save } from 'lucide-react';
-
-const Motion = motion as any;
+import { X, Search, ChevronRight, ChevronLeft, Calendar, Clock, User as UserIcon, CheckCircle2, AlertCircle, Plus, DollarSign, Briefcase, Loader2, Save } from 'lucide-react';
 
 interface NewBookingModalProps {
   isOpen: boolean;
@@ -23,7 +21,7 @@ interface NewBookingModalProps {
   packages?: Package[];
 }
 
-const NewBookingModal: React.FC<NewBookingModalProps> = ({ isOpen, onClose, photographers, accounts, bookings = [], clients = [], config, onAddBooking, onAddClient, initialData, packages = [] }) => {
+const NewBookingModal: React.FC<NewBookingModalProps> = ({ isOpen, onClose, photographers, accounts, bookings = [], clients = [], config, onAddBooking, onAddClient, initialData, packages = [], googleToken }) => {
   const [step, setStep] = useState(1);
   const [clientSearch, setClientSearch] = useState('');
   const [selectedClient, setSelectedClient] = useState<Client | null>(null);
@@ -32,6 +30,13 @@ const NewBookingModal: React.FC<NewBookingModalProps> = ({ isOpen, onClose, phot
   
   // DRAFT KEY
   const DRAFT_KEY = 'lumina_booking_draft';
+
+  // HELPER: Get Local Date ISO String (Fixes UTC Bug)
+  const getLocalDateString = () => {
+      const now = new Date();
+      const offset = now.getTimezoneOffset() * 60000;
+      return new Date(now.getTime() - offset).toISOString().split('T')[0];
+  };
 
   const [bookingForm, setBookingForm] = useState<{
       date: string;
@@ -42,15 +47,17 @@ const NewBookingModal: React.FC<NewBookingModalProps> = ({ isOpen, onClose, phot
       photographerId: string;
       price: number;
       notes: string;
+      syncGoogle: boolean;
   }>({
-      date: new Date().toISOString().split('T')[0],
+      date: getLocalDateString(),
       timeStart: '10:00',
       duration: 2,
       studio: config.rooms[0]?.name || 'Main Studio',
       packageId: '',
       photographerId: photographers[0]?.id || '',
       price: 0,
-      notes: ''
+      notes: '',
+      syncGoogle: !!googleToken
   });
 
   const [newClientForm, setNewClientForm] = useState({ name: '', phone: '', email: '', category: 'NEW' });
@@ -64,7 +71,7 @@ const NewBookingModal: React.FC<NewBookingModalProps> = ({ isOpen, onClose, phot
         if (savedDraft && !initialData) {
             try {
                 const parsed = JSON.parse(savedDraft);
-                setBookingForm(parsed.form);
+                setBookingForm(prev => ({...prev, ...parsed.form, syncGoogle: !!googleToken}));
                 if (parsed.client) setSelectedClient(parsed.client);
                 setStep(parsed.step || 1);
             } catch (e) { console.error("Draft parse error", e); }
@@ -84,7 +91,7 @@ const NewBookingModal: React.FC<NewBookingModalProps> = ({ isOpen, onClose, phot
         // 3. Reset submission state
         setIsSubmitting(false);
     }
-  }, [isOpen, initialData]);
+  }, [isOpen, initialData, googleToken]);
 
   // --- AUTO SAVE EFFECT ---
   useEffect(() => {
@@ -178,6 +185,48 @@ const NewBookingModal: React.FC<NewBookingModalProps> = ({ isOpen, onClose, phot
       return true;
   };
 
+  const createGoogleEvent = async (booking: Booking) => {
+      if (!googleToken || !bookingForm.syncGoogle) return;
+      
+      const startTime = new Date(`${booking.date}T${booking.timeStart}`);
+      const endTime = new Date(startTime.getTime() + booking.duration * 60 * 60000);
+
+      const event = {
+          summary: `${booking.clientName} - ${booking.package}`,
+          location: booking.studio,
+          description: `Booking ID: ${booking.id}\nPhone: ${booking.clientPhone}\nNotes: ${booking.notes || 'None'}`,
+          start: {
+              dateTime: startTime.toISOString(),
+              timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone
+          },
+          end: {
+              dateTime: endTime.toISOString(),
+              timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone
+          },
+          reminders: {
+              useDefault: false,
+              overrides: [
+                  { method: 'email', minutes: 24 * 60 },
+                  { method: 'popup', minutes: 30 },
+              ],
+          },
+      };
+
+      try {
+          await fetch('https://www.googleapis.com/calendar/v3/calendars/primary/events', {
+              method: 'POST',
+              headers: {
+                  'Authorization': `Bearer ${googleToken}`,
+                  'Content-Type': 'application/json',
+              },
+              body: JSON.stringify(event),
+          });
+      } catch (error) {
+          console.error("Failed to create Google Calendar event:", error);
+          alert("Booking saved, but failed to sync to Google Calendar.");
+      }
+  };
+
   const handleSubmit = async () => {
       if (onAddBooking && selectedClient && !conflictError) {
           if (paymentForm.amount > 0 && !paymentForm.accountId) {
@@ -222,6 +271,12 @@ const NewBookingModal: React.FC<NewBookingModalProps> = ({ isOpen, onClose, phot
 
           try {
               await onAddBooking(newBooking, paymentForm.amount > 0 ? paymentForm : undefined);
+              
+              // Google Calendar Sync
+              if (bookingForm.syncGoogle) {
+                  await createGoogleEvent(newBooking);
+              }
+
               localStorage.removeItem(DRAFT_KEY); // Clear draft on success
               onClose();
           } catch (e) {
@@ -238,7 +293,7 @@ const NewBookingModal: React.FC<NewBookingModalProps> = ({ isOpen, onClose, phot
     <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 lg:p-0">
       <div className="absolute inset-0 bg-black/80 backdrop-blur-sm" onClick={isSubmitting ? undefined : onClose}></div>
       
-      <Motion.div 
+      <motion.div 
         initial={{ scale: 0.95, opacity: 0, y: 20 }}
         animate={{ scale: 1, opacity: 1, y: 0 }}
         exit={{ scale: 0.95, opacity: 0, y: 20 }}
@@ -305,7 +360,7 @@ const NewBookingModal: React.FC<NewBookingModalProps> = ({ isOpen, onClose, phot
                     
                     {/* STEP 1: CLIENT SELECTION */}
                     {step === 1 && (
-                        <Motion.div key="step1" initial={{ opacity: 0, x: 10 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -10 }} className="space-y-6">
+                        <motion.div key="step1" initial={{ opacity: 0, x: 10 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -10 }} className="space-y-6">
                             <h2 className="text-2xl font-bold text-white">Select Client</h2>
                             
                             {!isCreatingClient ? (
@@ -373,12 +428,12 @@ const NewBookingModal: React.FC<NewBookingModalProps> = ({ isOpen, onClose, phot
                                     <button onClick={handleCreateClient} className="w-full py-3 bg-lumina-accent text-lumina-base font-bold rounded-xl hover:bg-lumina-accent/90 transition-colors">Save Client</button>
                                 </div>
                             )}
-                        </Motion.div>
+                        </motion.div>
                     )}
 
                     {/* STEP 2: SESSION DETAILS */}
                     {step === 2 && (
-                        <Motion.div key="step2" initial={{ opacity: 0, x: 10 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -10 }} className="space-y-6">
+                        <motion.div key="step2" initial={{ opacity: 0, x: 10 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -10 }} className="space-y-6">
                             <h2 className="text-2xl font-bold text-white">Session Details</h2>
                             
                             <div className="space-y-4">
@@ -467,12 +522,12 @@ const NewBookingModal: React.FC<NewBookingModalProps> = ({ isOpen, onClose, phot
                                     </div>
                                 </div>
                             </div>
-                        </Motion.div>
+                        </motion.div>
                     )}
 
                     {/* STEP 3: PAYMENT & CONFIRM */}
                     {step === 3 && (
-                        <Motion.div key="step3" initial={{ opacity: 0, x: 10 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -10 }} className="space-y-6">
+                        <motion.div key="step3" initial={{ opacity: 0, x: 10 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -10 }} className="space-y-6">
                             <h2 className="text-2xl font-bold text-white">Payment & Confirmation</h2>
                             
                             <div className="bg-white text-black rounded-xl overflow-hidden shadow-2xl max-w-md mx-auto relative">
@@ -547,9 +602,24 @@ const NewBookingModal: React.FC<NewBookingModalProps> = ({ isOpen, onClose, phot
                                             </div>
                                         )}
                                     </div>
+
+                                    {/* Google Sync Toggle */}
+                                    <div className="mt-4 flex items-center gap-2">
+                                        <input 
+                                            type="checkbox" 
+                                            id="googleSync"
+                                            checked={bookingForm.syncGoogle}
+                                            disabled={!googleToken}
+                                            onChange={(e) => setBookingForm({...bookingForm, syncGoogle: e.target.checked})}
+                                            className="rounded border-gray-300 text-emerald-500 focus:ring-emerald-500"
+                                        />
+                                        <label htmlFor="googleSync" className={`text-xs font-bold uppercase ${googleToken ? 'text-gray-600' : 'text-gray-400'}`}>
+                                            Sync to Google Calendar {googleToken ? '' : '(Not Connected)'}
+                                        </label>
+                                    </div>
                                 </div>
                             </div>
-                        </Motion.div>
+                        </motion.div>
                     )}
 
                 </AnimatePresence>
@@ -586,7 +656,7 @@ const NewBookingModal: React.FC<NewBookingModalProps> = ({ isOpen, onClose, phot
                 </button>
             </div>
         </div>
-      </Motion.div>
+      </motion.div>
     </div>
   );
 };

@@ -25,7 +25,21 @@ const SettingsView: React.FC<ExtendedSettingsViewProps> = ({ packages, config, o
 
   useEffect(() => { setLocalConfig(config); }, [config]);
 
-  const loadGoogleScript = () => { return new Promise((resolve) => { if (typeof google !== 'undefined' && google.accounts) { resolve(true); return; } const script = document.createElement('script'); script.src = 'https://accounts.google.com/gsi/client'; script.async = true; script.defer = true; script.onload = () => resolve(true); document.body.appendChild(script); }); };
+  const loadGoogleScript = () => { 
+      return new Promise((resolve, reject) => { 
+          if (typeof google !== 'undefined' && google.accounts) { 
+              resolve(true); 
+              return; 
+          } 
+          const script = document.createElement('script'); 
+          script.src = 'https://accounts.google.com/gsi/client'; 
+          script.async = true; 
+          script.defer = true; 
+          script.onload = () => resolve(true); 
+          script.onerror = () => reject(new Error("Failed to load Google Identity Services"));
+          document.body.appendChild(script); 
+      }); 
+  };
   
   const handleConnectGoogle = async () => { 
       if (googleToken) { 
@@ -34,19 +48,30 @@ const SettingsView: React.FC<ExtendedSettingsViewProps> = ({ packages, config, o
           } 
           return; 
       } 
-      await loadGoogleScript(); 
-      const CLIENT_ID = '276331844787-lolqnoah70th2mm7jt2ftim37sjilu00.apps.googleusercontent.com'; 
-      const client = google.accounts.oauth2.initTokenClient({ 
-          client_id: CLIENT_ID, 
-          scope: 'https://www.googleapis.com/auth/calendar.events https://www.googleapis.com/auth/drive', 
-          callback: (tokenResponse: any) => { 
-              if (tokenResponse && tokenResponse.access_token) { 
-                  if(setGoogleToken) setGoogleToken(tokenResponse.access_token); 
-                  alert("Successfully connected!"); 
-              } 
-          }, 
-      }); 
-      client.requestAccessToken(); 
+      
+      try {
+          await loadGoogleScript();
+          
+          if (typeof google === 'undefined' || !google.accounts) {
+              throw new Error("Google Identity Services not initialized. Please refresh and try again.");
+          }
+
+          const CLIENT_ID = '276331844787-lolqnoah70th2mm7jt2ftim37sjilu00.apps.googleusercontent.com'; 
+          const client = google.accounts.oauth2.initTokenClient({ 
+              client_id: CLIENT_ID, 
+              scope: 'https://www.googleapis.com/auth/calendar.events https://www.googleapis.com/auth/drive', 
+              callback: (tokenResponse: any) => { 
+                  if (tokenResponse && tokenResponse.access_token) { 
+                      if(setGoogleToken) setGoogleToken(tokenResponse.access_token); 
+                      alert("Successfully connected!"); 
+                  } 
+              }, 
+          }); 
+          client.requestAccessToken(); 
+      } catch (e: any) {
+          console.error("Google Connect Error:", e);
+          alert(`Connection failed: ${e.message}`);
+      }
   };
 
   const handleSaveConfig = () => { if (onUpdateConfig) { onUpdateConfig(localConfig); } };

@@ -1,12 +1,8 @@
 
-import React, { useState } from 'react';
+import React from 'react';
 import { motion } from 'framer-motion';
-import { X, Printer, Download, Aperture, Loader2 } from 'lucide-react';
+import { X, Printer, Aperture } from 'lucide-react';
 import { Booking, StudioConfig } from '../types';
-import html2canvas from 'html2canvas';
-import { jsPDF } from 'jspdf';
-
-const Motion = motion as any;
 
 interface InvoiceModalProps {
   isOpen: boolean;
@@ -16,8 +12,6 @@ interface InvoiceModalProps {
 }
 
 const InvoiceModal: React.FC<InvoiceModalProps> = ({ isOpen, onClose, booking, config }) => {
-  const [isGeneratingPDF, setIsGeneratingPDF] = useState(false);
-
   if (!isOpen || !booking) return null;
 
   // Determine Tax Rate
@@ -58,76 +52,47 @@ const InvoiceModal: React.FC<InvoiceModalProps> = ({ isOpen, onClose, booking, c
     ? new Date(booking.contractSignedDate).toLocaleDateString() 
     : new Date(booking.date).toLocaleDateString();
 
-  const handleDownloadPDF = async () => {
-      setIsGeneratingPDF(true);
-      try {
-          const element = document.getElementById('invoice-content');
-          if (!element) return;
-
-          const canvas = await html2canvas(element, {
-              scale: 2,
-              logging: false,
-              useCORS: true
-          });
-
-          const imgData = canvas.toDataURL('image/png');
-          const pdf = new jsPDF('p', 'mm', 'a4');
-          const pdfWidth = pdf.internal.pageSize.getWidth();
-          const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
-
-          pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, pdfHeight);
-          pdf.save(`${generateInvoiceId()}.pdf`);
-      } catch (error) {
-          console.error("PDF Generation Error:", error);
-          alert("Failed to generate PDF. Please try again.");
-      } finally {
-          setIsGeneratingPDF(false);
-      }
-  };
-
   return (
     <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 print:p-0">
-      {/* Print Styles */}
+      {/* Optimized Print Styles */}
       <style>
         {`
           @media print {
-            body > *:not(#root) { display: none; }
-            #root > *:not(.fixed) { display: none; }
-            .print\\:hidden { display: none !important; }
-            .print\\:block { display: block !important; }
-            .print\\:text-black { color: black !important; }
-            .print\\:bg-white { background-color: white !important; }
-            .print\\:shadow-none { box-shadow: none !important; }
-            .print\\:border-none { border: none !important; }
-            .fixed { position: static !important; inset: 0 !important; }
-            .print\\:p-0 { padding: 0 !important; }
-            .print\\:h-auto { height: auto !important; }
-            .print\\:w-full { width: 100% !important; max-width: 100% !important; }
-            .print\\:overflow-visible { overflow: visible !important; }
+            body * { visibility: hidden; }
+            #invoice-content, #invoice-content * { visibility: visible; }
+            #invoice-content {
+                position: absolute;
+                left: 0;
+                top: 0;
+                width: 100%;
+                margin: 0;
+                padding: 20px;
+                background-color: white !important;
+                color: black !important;
+                box-shadow: none !important;
+                border-radius: 0 !important;
+                overflow: visible !important;
+            }
+            .no-print { display: none !important; }
+            .print-black { color: #000 !important; }
+            .print-border { border-color: #000 !important; }
           }
         `}
       </style>
 
-      <div className="absolute inset-0 bg-black/90 backdrop-blur-md print:hidden" onClick={onClose}></div>
+      <div className="absolute inset-0 bg-black/90 backdrop-blur-md no-print" onClick={onClose}></div>
       
-      <Motion.div 
+      <motion.div 
         initial={{ scale: 0.95, opacity: 0 }}
         animate={{ scale: 1, opacity: 1 }}
         exit={{ scale: 0.95, opacity: 0 }}
         className="relative w-full max-w-3xl h-[85vh] flex flex-col print:h-auto print:shadow-none print:w-full"
       >
-        <div className="flex justify-between items-center mb-4 text-white print:hidden">
+        <div className="flex justify-between items-center mb-4 text-white no-print">
             <h2 className="text-xl font-bold font-display">Invoice Preview</h2>
             <div className="flex items-center gap-2">
-                <button onClick={() => window.print()} className="flex items-center gap-2 px-4 py-2 bg-lumina-surface border border-lumina-highlight rounded-lg hover:bg-lumina-highlight transition-colors text-sm">
-                    <Printer size={16} /> Print
-                </button>
-                <button 
-                    onClick={handleDownloadPDF}
-                    disabled={isGeneratingPDF}
-                    className="flex items-center gap-2 px-4 py-2 bg-lumina-accent text-lumina-base rounded-lg font-bold hover:bg-lumina-accent/90 transition-colors text-sm disabled:opacity-50"
-                >
-                    {isGeneratingPDF ? <Loader2 size={16} className="animate-spin"/> : <Download size={16} />} Download PDF
+                <button onClick={() => window.print()} className="flex items-center gap-2 px-4 py-2 bg-lumina-accent text-lumina-base rounded-lg font-bold hover:bg-lumina-accent/90 transition-colors text-sm">
+                    <Printer size={16} /> Print / Save as PDF
                 </button>
                 <button onClick={onClose} className="p-2 hover:bg-white/10 rounded-lg ml-2">
                     <X size={20} />
@@ -135,13 +100,13 @@ const InvoiceModal: React.FC<InvoiceModalProps> = ({ isOpen, onClose, booking, c
             </div>
         </div>
 
-        <div id="invoice-content" className="flex-1 bg-white text-stone-900 rounded-lg shadow-2xl overflow-y-auto custom-scrollbar relative font-sans print:overflow-visible print:rounded-none">
-            <div className="p-12 min-h-full flex flex-col justify-between print:p-0">
+        <div id="invoice-content" className="flex-1 bg-white text-stone-900 rounded-lg shadow-2xl overflow-y-auto custom-scrollbar relative font-sans">
+            <div className="p-12 min-h-full flex flex-col justify-between">
                 
                 <div>
-                    <div className="flex justify-between items-start border-b-2 border-stone-900 pb-8 mb-8">
+                    <div className="flex justify-between items-start border-b-2 border-stone-900 pb-8 mb-8 print-border">
                         <div>
-                            <div className="flex items-center gap-2 mb-4 text-stone-900">
+                            <div className="flex items-center gap-2 mb-4 text-stone-900 print-black">
                                 {config.logoUrl ? (
                                     <img src={config.logoUrl} alt="Logo" className="h-10 w-auto" />
                                 ) : (
@@ -149,52 +114,52 @@ const InvoiceModal: React.FC<InvoiceModalProps> = ({ isOpen, onClose, booking, c
                                 )}
                                 <span className="font-display font-bold text-2xl tracking-tight uppercase">{config.name}</span>
                             </div>
-                            <div className="text-sm text-stone-600 space-y-1">
+                            <div className="text-sm text-stone-600 space-y-1 print-black">
                                 <p>{config.address}</p>
                                 <p>{config.phone}</p>
                                 <p>{config.website}</p>
-                                {config.npwp && <p className="text-xs mt-2 text-stone-400">NPWP: {config.npwp}</p>}
+                                {config.npwp && <p className="text-xs mt-2 text-stone-400 print-black">NPWP: {config.npwp}</p>}
                             </div>
                         </div>
                         <div className="text-right">
-                            <h1 className="text-5xl font-display font-bold text-stone-200 mb-2">INVOICE</h1>
-                            <p className="text-stone-500 font-mono font-bold tracking-widest">{generateInvoiceId()}</p>
-                            <p className="text-sm font-bold text-stone-900 mt-2">Date: {invoiceDate}</p>
+                            <h1 className="text-5xl font-display font-bold text-stone-200 mb-2 print-black">INVOICE</h1>
+                            <p className="text-stone-500 font-mono font-bold tracking-widest print-black">{generateInvoiceId()}</p>
+                            <p className="text-sm font-bold text-stone-900 mt-2 print-black">Date: {invoiceDate}</p>
                         </div>
                     </div>
 
                     <div className="grid grid-cols-2 gap-12 mb-12">
                         <div>
-                            <h3 className="text-xs font-bold uppercase tracking-wider text-stone-400 mb-2">Billed To</h3>
-                            <p className="font-bold text-xl">{booking.clientName}</p>
-                            <p className="text-stone-600">{booking.clientPhone}</p>
+                            <h3 className="text-xs font-bold uppercase tracking-wider text-stone-400 mb-2 print-black">Billed To</h3>
+                            <p className="font-bold text-xl print-black">{booking.clientName}</p>
+                            <p className="text-stone-600 print-black">{booking.clientPhone}</p>
                         </div>
                         <div>
-                             <h3 className="text-xs font-bold uppercase tracking-wider text-stone-400 mb-2">Project Details</h3>
-                             <p className="font-bold">{booking.package}</p>
-                             <p className="text-stone-600">Session Date: {booking.date}</p>
-                             <p className="text-stone-600">Studio: {booking.studio}</p>
+                             <h3 className="text-xs font-bold uppercase tracking-wider text-stone-400 mb-2 print-black">Project Details</h3>
+                             <p className="font-bold print-black">{booking.package}</p>
+                             <p className="text-stone-600 print-black">Session Date: {booking.date}</p>
+                             <p className="text-stone-600 print-black">Studio: {booking.studio}</p>
                         </div>
                     </div>
 
                     <table className="w-full mb-8">
                         <thead>
-                            <tr className="border-b border-stone-300">
-                                <th className="text-left py-3 text-sm font-bold uppercase text-stone-500">Description</th>
-                                <th className="text-right py-3 text-sm font-bold uppercase text-stone-500">Price</th>
-                                <th className="text-right py-3 text-sm font-bold uppercase text-stone-500">Qty</th>
-                                <th className="text-right py-3 text-sm font-bold uppercase text-stone-500">Total</th>
+                            <tr className="border-b border-stone-300 print-border">
+                                <th className="text-left py-3 text-sm font-bold uppercase text-stone-500 print-black">Description</th>
+                                <th className="text-right py-3 text-sm font-bold uppercase text-stone-500 print-black">Price</th>
+                                <th className="text-right py-3 text-sm font-bold uppercase text-stone-500 print-black">Qty</th>
+                                <th className="text-right py-3 text-sm font-bold uppercase text-stone-500 print-black">Total</th>
                             </tr>
                         </thead>
-                        <tbody className="divide-y divide-stone-100">
+                        <tbody className="divide-y divide-stone-100 print-border">
                             {items.map((item) => (
                                 <tr key={item.id}>
                                     <td className="py-4">
-                                        <p className="font-bold text-stone-800">{item.description}</p>
+                                        <p className="font-bold text-stone-800 print-black">{item.description}</p>
                                     </td>
-                                    <td className="text-right py-4 font-mono text-stone-600">{item.unitPrice.toLocaleString('id-ID')}</td>
-                                    <td className="text-right py-4 font-mono">{item.quantity}</td>
-                                    <td className="text-right py-4 font-mono font-bold">Rp {item.total.toLocaleString('id-ID')}</td>
+                                    <td className="text-right py-4 font-mono text-stone-600 print-black">{item.unitPrice.toLocaleString('id-ID')}</td>
+                                    <td className="text-right py-4 font-mono print-black">{item.quantity}</td>
+                                    <td className="text-right py-4 font-mono font-bold print-black">Rp {item.total.toLocaleString('id-ID')}</td>
                                 </tr>
                             ))}
                         </tbody>
@@ -202,31 +167,31 @@ const InvoiceModal: React.FC<InvoiceModalProps> = ({ isOpen, onClose, booking, c
 
                     <div className="flex justify-end mb-12">
                         <div className="w-64 space-y-3">
-                            <div className="flex justify-between text-sm text-stone-600">
+                            <div className="flex justify-between text-sm text-stone-600 print-black">
                                 <span>Subtotal</span>
                                 <span className="font-mono">Rp {subtotal.toLocaleString('id-ID')}</span>
                             </div>
                             
                             {discount.value > 0 && (
-                                <div className="flex justify-between text-sm text-emerald-600">
+                                <div className="flex justify-between text-sm text-emerald-600 print-black">
                                     <span>Discount {discount.type === 'PERCENT' ? `(${discount.value}%)` : ''}</span>
                                     <span className="font-mono">- Rp {discountAmount.toLocaleString('id-ID')}</span>
                                 </div>
                             )}
 
-                            <div className="flex justify-between text-sm text-stone-600">
+                            <div className="flex justify-between text-sm text-stone-600 print-black">
                                 <span>Tax (PPN {applicableTaxRate}%)</span>
                                 <span className="font-mono">Rp {taxAmount.toLocaleString('id-ID')}</span>
                             </div>
-                            <div className="border-t border-stone-300 pt-3 flex justify-between font-bold text-lg">
+                            <div className="border-t border-stone-300 pt-3 flex justify-between font-bold text-lg print-border print-black">
                                 <span>Total</span>
                                 <span className="font-mono">Rp {totalAmount.toLocaleString('id-ID')}</span>
                             </div>
-                            <div className="flex justify-between text-sm text-emerald-600 font-bold">
+                            <div className="flex justify-between text-sm text-emerald-600 font-bold print-black">
                                 <span>Amount Paid</span>
                                 <span className="font-mono">- Rp {booking.paidAmount.toLocaleString('id-ID')}</span>
                             </div>
-                            <div className="bg-stone-900 text-white p-3 rounded-lg flex justify-between font-bold text-xl mt-4 print:bg-stone-200 print:text-black">
+                            <div className="bg-stone-900 text-white p-3 rounded-lg flex justify-between font-bold text-xl mt-4 print-border" style={{backgroundColor: '#000', color: '#fff'}}>
                                 <span>Balance Due</span>
                                 <span className="font-mono">Rp {balanceDue.toLocaleString('id-ID')}</span>
                             </div>
@@ -234,28 +199,29 @@ const InvoiceModal: React.FC<InvoiceModalProps> = ({ isOpen, onClose, booking, c
                     </div>
                 </div>
 
-                <div className="border-t border-stone-200 pt-8 flex justify-between items-end">
+                <div className="border-t border-stone-200 pt-8 flex justify-between items-end print-border">
                     <div>
-                        <h4 className="font-bold text-sm mb-2">Payment Methods</h4>
-                        <div className="text-sm text-stone-600">
-                            <p><span className="font-bold">{config.bankName}</span>: {config.bankAccount}</p>
-                            <p>A/N: {config.bankHolder}</p>
+                        <h4 className="font-bold text-sm mb-2 print-black">Payment Methods</h4>
+                        <div className="text-sm text-stone-600 print-black">
+                            <p><span className="font-bold">Bank Name</span>: {config.bankName}</p>
+                            <p><span className="font-bold">Account</span>: {config.bankAccount}</p>
+                            <p><span className="font-bold">A/N</span>: {config.bankHolder}</p>
                         </div>
                         {config.invoiceFooter && (
-                            <p className="text-xs text-stone-400 mt-4 italic max-w-sm">{config.invoiceFooter}</p>
+                            <p className="text-xs text-stone-400 mt-4 italic max-w-sm print-black">{config.invoiceFooter}</p>
                         )}
                     </div>
                     <div className="text-right">
-                        <p className="text-xs text-stone-400">Authorized Signature</p>
+                        <p className="text-xs text-stone-400 print-black">Authorized Signature</p>
                         <div className="h-16 flex items-end justify-end">
-                            <p className="font-display font-bold text-lg">{config.name}</p>
+                            <p className="font-display font-bold text-lg print-black">{config.name}</p>
                         </div>
                     </div>
                 </div>
 
             </div>
         </div>
-      </Motion.div>
+      </motion.div>
     </div>
   );
 };

@@ -2,7 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Booking, ProjectStatus, User, StudioConfig, Package, ActivityLog, Asset, Transaction, Account } from '../types';
-import { X, FileSignature, Upload, Trash2, MessageCircle, ListChecks, History, MapPin, HardDrive, LayoutDashboard, Eye, Copy, Calendar, Tag, ArrowLeft } from 'lucide-react';
+import { X, FileSignature, Upload, Trash2, MessageCircle, ListChecks, History, MapPin, HardDrive, LayoutDashboard, Eye, Copy, Calendar, Tag, ArrowLeft, AlertCircle } from 'lucide-react';
 
 import ProjectOverview from './project-drawer-tabs/ProjectOverview';
 import ProjectTasks from './project-drawer-tabs/ProjectTasks';
@@ -39,16 +39,58 @@ const Motion = motion as any;
 const ProjectDrawer: React.FC<ProjectDrawerProps> = ({ isOpen, onClose, booking, photographer, onUpdateBooking, onDeleteBooking, bookings = [], config, packages = [], currentUser, assets = [], users = [], transactions = [], onAddTransaction, accounts = [], googleToken, onLogActivity }) => {
   const [activeTab, setActiveTab] = useState<Tab>('OVERVIEW');
   const [showDrivePicker, setShowDrivePicker] = useState(false);
+  const [showRefundPrompt, setShowRefundPrompt] = useState(false);
 
   useEffect(() => {
     if (booking) {
       setActiveTab('OVERVIEW');
       setShowDrivePicker(false);
+      setShowRefundPrompt(false);
     }
   }, [booking, isOpen]);
 
   const createLocalLog = (action: string, details?: string): ActivityLog => ({ id: `log-${Date.now()}`, timestamp: new Date().toISOString(), action, details, userId: currentUser?.id || 'sys', userName: currentUser?.name || 'System' });
-  const handleStatusChange = (status: ProjectStatus) => { if(booking) onUpdateBooking({ ...booking, status, logs: [createLocalLog('STATUS_CHANGE', `Status to ${status}`), ...(booking.logs||[])] }); };
+  
+  const handleStatusChange = (status: ProjectStatus) => { 
+      if (!booking) return;
+
+      // Smart Cancellation Logic
+      if (status === 'CANCELLED' && booking.paidAmount > 0) {
+          setShowRefundPrompt(true);
+      } else if (status === 'CANCELLED') {
+          // No money paid, just cancel
+          alert("Booking cancelled. Reminder: Check if any equipment was already prepared/checked out.");
+      }
+
+      onUpdateBooking({ 
+          ...booking, 
+          status, 
+          logs: [createLocalLog('STATUS_CHANGE', `Status to ${status}`), ...(booking.logs||[])] 
+      }); 
+  };
+
+  const handleProcessRefund = (shouldRefund: boolean) => {
+      setShowRefundPrompt(false);
+      if (!booking || !onAddTransaction || !accounts || accounts.length === 0) return;
+
+      if (shouldRefund) {
+          // Process full refund
+          const refundAmount = booking.paidAmount;
+          onAddTransaction({
+              description: `Refund - Cancellation - ${booking.clientName}`,
+              amount: refundAmount,
+              category: 'Refunds',
+              accountId: accounts[0].id, // Default to first account, ideally prompt user
+              bookingId: booking.id
+          });
+          onUpdateBooking({ ...booking, paidAmount: 0, logs: [createLocalLog('FINANCE', `Processed refund of ${refundAmount}`), ...(booking.logs||[])] });
+          alert("Refund recorded in Finance.");
+      } else {
+          // Mark as Forfeited / No Refund
+          onUpdateBooking({ ...booking, logs: [createLocalLog('FINANCE', 'Deposit forfeited upon cancellation'), ...(booking.logs||[])] });
+      }
+  };
+
   const handleDelete = () => { if (booking && onDeleteBooking && window.confirm('Archive project?')) { onDeleteBooking(booking.id); onClose(); } };
   
   const handleSelectFolder = (folderId: string, folderName: string) => { 
@@ -115,6 +157,25 @@ const ProjectDrawer: React.FC<ProjectDrawerProps> = ({ isOpen, onClose, booking,
                 </button>
             </div>
         </div>
+
+        {/* REFUND PROMPT OVERLAY */}
+        <AnimatePresence>
+            {showRefundPrompt && (
+                <div className="absolute top-0 left-0 w-full z-50 p-4 bg-rose-500/90 text-white flex justify-between items-center backdrop-blur-sm shadow-xl">
+                    <div className="flex items-center gap-3">
+                        <AlertCircle size={24} />
+                        <div>
+                            <p className="font-bold text-sm">Cancellation with Payment Detected</p>
+                            <p className="text-xs opacity-90">Client has paid Rp {booking.paidAmount.toLocaleString()}. Issue refund?</p>
+                        </div>
+                    </div>
+                    <div className="flex gap-2">
+                        <button onClick={() => handleProcessRefund(false)} className="px-3 py-1 bg-white/20 hover:bg-white/30 rounded text-xs font-bold">No Refund</button>
+                        <button onClick={() => handleProcessRefund(true)} className="px-3 py-1 bg-white text-rose-600 rounded text-xs font-bold hover:bg-gray-100">Process Refund</button>
+                    </div>
+                </div>
+            )}
+        </AnimatePresence>
 
         {/* TABS - Horizontal Scrollable */}
         <div className="bg-lumina-surface border-b border-lumina-highlight px-4 lg:px-6 py-3 flex gap-3 overflow-x-auto no-scrollbar shrink-0">
