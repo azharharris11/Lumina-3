@@ -66,18 +66,21 @@ const ProjectDrawer: React.FC<ProjectDrawerProps> = ({ isOpen, onClose, booking,
 
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center p-0 lg:p-4">
-      <div className="absolute inset-0 bg-black/80 backdrop-blur-sm" onClick={onClose}></div>
+      <div className="absolute inset-0 bg-black/90" onClick={onClose}></div>
       
       <Motion.div 
-        initial={{ y: '100%', opacity: 0 }}
-        animate={{ y: 0, opacity: 1 }}
-        exit={{ y: '100%', opacity: 0 }}
-        className="bg-lumina-surface border-l border-r border-lumina-highlight w-full lg:max-w-6xl h-full lg:h-[90vh] lg:rounded-2xl shadow-2xl relative overflow-hidden flex flex-col"
+        initial={{ y: '100%' }}
+        animate={{ y: 0 }}
+        exit={{ y: '100%' }}
+        transition={{ type: 'spring', damping: 25, stiffness: 250 }}
+        className="bg-lumina-base w-full lg:max-w-6xl h-full lg:h-[95vh] lg:rounded-2xl shadow-2xl relative overflow-hidden flex flex-col border border-lumina-highlight lg:border-white/10"
+        role="dialog"
+        aria-modal="true"
       >
-        {/* HEADER */}
-        <div className="p-4 lg:p-6 border-b border-lumina-highlight bg-lumina-base flex justify-between items-center shrink-0">
+        {/* HEADER - Solid Background */}
+        <div className="p-4 lg:p-6 border-b border-lumina-highlight bg-lumina-surface flex justify-between items-center shrink-0 z-20">
             <div className="flex items-center gap-4">
-                <button onClick={onClose} className="lg:hidden p-2 -ml-2 text-lumina-muted"><ArrowLeft size={20} /></button>
+                <button onClick={onClose} className="lg:hidden p-2 -ml-2 text-white bg-lumina-highlight rounded-lg"><ArrowLeft size={20} /></button>
                 <div>
                     <div className="flex flex-col lg:flex-row lg:items-center gap-1 lg:gap-3">
                         <h2 className="text-xl lg:text-2xl font-display font-bold text-white truncate max-w-[200px] lg:max-w-none">{booking.clientName}</h2>
@@ -96,7 +99,7 @@ const ProjectDrawer: React.FC<ProjectDrawerProps> = ({ isOpen, onClose, booking,
             </div>
             <div className="flex items-center gap-2 lg:gap-3">
                 <select 
-                    className="bg-lumina-surface border border-lumina-highlight text-white text-xs rounded-lg p-2 font-bold uppercase tracking-wide focus:border-lumina-accent outline-none max-w-[100px] lg:max-w-none"
+                    className="bg-lumina-base border border-lumina-highlight text-white text-xs rounded-lg p-2 font-bold uppercase tracking-wide focus:border-lumina-accent outline-none max-w-[100px] lg:max-w-none"
                     value={booking.status}
                     onChange={(e) => handleStatusChange(e.target.value as ProjectStatus)}
                 >
@@ -113,8 +116,8 @@ const ProjectDrawer: React.FC<ProjectDrawerProps> = ({ isOpen, onClose, booking,
             </div>
         </div>
 
-        {/* TABS */}
-        <div className="bg-lumina-surface border-b border-lumina-highlight px-4 lg:px-6 py-2 flex gap-2 overflow-x-auto no-scrollbar shrink-0">
+        {/* TABS - Horizontal Scrollable */}
+        <div className="bg-lumina-surface border-b border-lumina-highlight px-4 lg:px-6 py-3 flex gap-3 overflow-x-auto no-scrollbar shrink-0">
             {[
                 { id: 'OVERVIEW', icon: LayoutDashboard, label: 'Overview' },
                 { id: 'TASKS', icon: ListChecks, label: 'Tasks' },
@@ -126,8 +129,8 @@ const ProjectDrawer: React.FC<ProjectDrawerProps> = ({ isOpen, onClose, booking,
                 <button 
                     key={tab.id}
                     onClick={() => setActiveTab(tab.id as Tab)}
-                    className={`px-3 lg:px-4 py-2 rounded-full text-[10px] lg:text-xs font-bold uppercase tracking-wider flex items-center gap-2 transition-all whitespace-nowrap
-                        ${activeTab === tab.id ? 'bg-lumina-accent text-lumina-base shadow-lg shadow-lumina-accent/20' : 'text-lumina-muted hover:text-white hover:bg-lumina-highlight'}
+                    className={`px-4 py-2 rounded-lg text-xs font-bold uppercase tracking-wider flex items-center gap-2 transition-all whitespace-nowrap
+                        ${activeTab === tab.id ? 'bg-lumina-accent text-lumina-base shadow-sm' : 'bg-lumina-base border border-lumina-highlight text-lumina-muted hover:text-white'}
                     `}
                 >
                     <tab.icon size={14} /> {tab.label}
@@ -135,8 +138,8 @@ const ProjectDrawer: React.FC<ProjectDrawerProps> = ({ isOpen, onClose, booking,
             ))}
         </div>
 
-        {/* CONTENT */}
-        <div className="flex-1 overflow-y-auto custom-scrollbar bg-lumina-base/50 p-4 lg:p-6 pb-24">
+        {/* CONTENT - Solid Background for readability */}
+        <div className="flex-1 overflow-y-auto custom-scrollbar bg-lumina-base p-4 lg:p-6 pb-24">
             
             {activeTab === 'OVERVIEW' && (
                 <ProjectOverview 
@@ -177,7 +180,7 @@ const ProjectDrawer: React.FC<ProjectDrawerProps> = ({ isOpen, onClose, booking,
                 <ProjectLogs logs={booking.logs} />
             )}
 
-            {/* DRIVE PICKER MODAL (Nested) */}
+            {/* DRIVE PICKER MODAL (Nested - ensure high Z-Index) */}
             <AnimatePresence>
                 {showDrivePicker && (
                     <ProjectDrivePicker 
@@ -191,18 +194,18 @@ const ProjectDrawer: React.FC<ProjectDrawerProps> = ({ isOpen, onClose, booking,
 
         </div>
 
-        {/* STICKY QUICK ACTIONS FOOTER */}
-        <div className="border-t border-lumina-highlight bg-lumina-base p-3 lg:p-4 flex justify-between items-center shrink-0 pb-safe-area-bottom lg:pb-4">
-            <div className="hidden lg:block text-[10px] text-lumina-muted uppercase tracking-wider">Quick Actions</div>
-            <div className="flex gap-2 w-full lg:w-auto">
-                <button onClick={() => setActiveTab('TIMELINE')} className="flex-1 lg:flex-none flex items-center justify-center gap-2 px-4 py-3 lg:py-2 bg-lumina-surface border border-lumina-highlight rounded-xl hover:bg-lumina-highlight text-white text-xs font-bold transition-colors">
-                    <Upload size={14}/> Upload
+        {/* STICKY QUICK ACTIONS FOOTER - Always Visible */}
+        <div className="border-t border-lumina-highlight bg-lumina-surface p-3 lg:p-4 flex justify-between items-center shrink-0 pb-safe-area-bottom lg:pb-4 z-20">
+            <div className="hidden lg:block text-[10px] text-lumina-muted uppercase tracking-wider font-bold">Quick Actions</div>
+            <div className="flex gap-3 w-full lg:w-auto">
+                <button onClick={() => setActiveTab('TIMELINE')} className="flex-1 lg:flex-none flex items-center justify-center gap-2 px-4 py-3 lg:py-2 bg-lumina-base border border-lumina-highlight rounded-xl hover:bg-lumina-highlight text-white text-xs font-bold transition-colors">
+                    <Upload size={16}/> Upload
                 </button>
-                <button onClick={handleQuickWhatsApp} className="flex-1 lg:flex-none flex items-center justify-center gap-2 px-4 py-3 lg:py-2 bg-emerald-500/10 border border-emerald-500/20 rounded-xl hover:bg-emerald-500 hover:text-white text-emerald-400 text-xs font-bold transition-colors">
-                    <MessageCircle size={14}/> WhatsApp
+                <button onClick={handleQuickWhatsApp} className="flex-1 lg:flex-none flex items-center justify-center gap-2 px-4 py-3 lg:py-2 bg-emerald-500 hover:bg-emerald-600 text-white rounded-xl text-xs font-bold transition-colors">
+                    <MessageCircle size={16}/> WhatsApp
                 </button>
-                <button onClick={handleCopyPortalLink} className="flex-1 lg:flex-none flex items-center justify-center gap-2 px-4 py-3 lg:py-2 bg-blue-500/10 border border-blue-500/20 rounded-xl hover:bg-blue-500 hover:text-white text-blue-400 text-xs font-bold transition-colors">
-                    <Copy size={14}/> Link
+                <button onClick={handleCopyPortalLink} className="flex-1 lg:flex-none flex items-center justify-center gap-2 px-4 py-3 lg:py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold transition-colors">
+                    <Copy size={16}/> Link
                 </button>
             </div>
         </div>

@@ -61,13 +61,13 @@ const Sidebar: React.FC<SidebarProps> = ({ currentUser, onNavigate, currentView,
     <Motion.aside 
       initial={{ x: -20, opacity: 0 }}
       animate={{ x: 0, opacity: 1 }}
-      className="hidden lg:flex w-64 h-screen bg-lumina-surface/80 backdrop-blur-xl border-r border-lumina-highlight flex-col justify-between fixed left-0 top-0 z-50 transition-all duration-300"
+      className="hidden lg:flex w-64 h-screen bg-lumina-surface border-r border-lumina-highlight flex-col justify-between fixed left-0 top-0 z-50 transition-all duration-300 shadow-xl"
     >
       <div>
         {/* Header with App Switcher */}
         <div className="h-24 flex items-center justify-between px-6 border-b border-lumina-highlight/50">
           <div className="flex items-center">
-              <Aperture className="text-lumina-accent w-8 h-8 animate-spin-slow shrink-0" />
+              <Aperture className="text-lumina-accent w-8 h-8 shrink-0" />
               <span className="ml-3 font-display font-bold text-xl tracking-tight text-lumina-text">
                 LUMINA
               </span>
@@ -92,7 +92,7 @@ const Sidebar: React.FC<SidebarProps> = ({ currentUser, onNavigate, currentView,
               onClick={() => onNavigate(item.id)}
               className={`w-full flex items-center justify-start px-4 py-3 rounded-xl transition-all duration-200 group relative
                 ${currentView === item.id 
-                  ? 'bg-lumina-highlight text-lumina-accent shadow-lg shadow-lumina-accent/5' 
+                  ? 'bg-lumina-highlight text-lumina-accent shadow-sm' 
                   : 'text-lumina-muted hover:text-lumina-text hover:bg-lumina-highlight/30'
                 }`}
             >
@@ -116,7 +116,7 @@ const Sidebar: React.FC<SidebarProps> = ({ currentUser, onNavigate, currentView,
         </nav>
       </div>
 
-      <div className="p-4 border-t border-lumina-highlight/50 space-y-3">
+      <div className="p-4 border-t border-lumina-highlight/50 space-y-3 bg-lumina-base/30">
         {/* Theme Toggle */}
         <button
           onClick={onToggleTheme}
@@ -135,7 +135,7 @@ const Sidebar: React.FC<SidebarProps> = ({ currentUser, onNavigate, currentView,
           <img 
             src={currentUser.avatar} 
             alt={currentUser.name} 
-            className="w-8 h-8 rounded-full border border-lumina-accent/30"
+            className="w-8 h-8 rounded-full border border-lumina-highlight"
           />
           <div className="ml-3 overflow-hidden">
             <p className="text-sm font-bold text-lumina-text truncate">{currentUser.name}</p>

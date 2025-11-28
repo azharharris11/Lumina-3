@@ -22,12 +22,36 @@ import AppLauncher from './components/AppLauncher';
 import NewBookingModal from './components/NewBookingModal';
 import ProjectDrawer from './components/ProjectDrawer';
 import CommandPalette from './components/CommandPalette';
-import { User, Booking, Asset, Notification, Account, Transaction, Client, Package, StudioConfig, BookingTask, ActivityLog, PublicBookingSubmission, StudioRoom, ProjectStatus, OnboardingData } from './types';
+import { User, Booking, Asset, Notification, Account, Transaction, Client, Package, StudioConfig, BookingTask, ActivityLog, PublicBookingSubmission, StudioRoom, ProjectStatus, OnboardingData, Role } from './types';
 import { STUDIO_CONFIG, USERS, ACCOUNTS, PACKAGES, ASSETS, CLIENTS, BOOKINGS, TRANSACTIONS, NOTIFICATIONS } from './data';
 import { auth, db, onAuthStateChanged, signOut } from './firebase';
 import { collection, onSnapshot, doc, setDoc, updateDoc, addDoc, deleteDoc, query, where, writeBatch, getDoc } from 'firebase/firestore';
+import { ShieldAlert } from 'lucide-react';
 
 const INITIAL_CONFIG = STUDIO_CONFIG;
+
+// STRICT RBAC VIEW MAP
+const VIEW_PERMISSIONS: Record<string, Role[]> = {
+    'dashboard': ['OWNER', 'ADMIN', 'PHOTOGRAPHER', 'EDITOR', 'FINANCE'],
+    'calendar': ['OWNER', 'ADMIN', 'PHOTOGRAPHER'],
+    'production': ['OWNER', 'ADMIN', 'EDITOR', 'PHOTOGRAPHER'],
+    'inventory': ['OWNER', 'ADMIN', 'PHOTOGRAPHER'],
+    'clients': ['OWNER', 'ADMIN', 'FINANCE'],
+    'team': ['OWNER', 'ADMIN', 'FINANCE'],
+    'finance': ['OWNER', 'FINANCE'],
+    'analytics': ['OWNER', 'ADMIN'],
+    'settings': ['OWNER', 'ADMIN'],
+};
+
+const AccessDenied = () => (
+    <div className="h-full flex flex-col items-center justify-center text-center p-8">
+        <div className="p-4 bg-rose-500/10 rounded-full mb-4 border border-rose-500/20">
+            <ShieldAlert size={48} className="text-rose-500" />
+        </div>
+        <h2 className="text-2xl font-bold text-white mb-2">Access Denied</h2>
+        <p className="text-lumina-muted max-w-sm">You do not have permission to view this module. Please contact your studio administrator.</p>
+    </div>
+);
 
 const App: React.FC = () => {
   // --- STATE MANAGEMENT ---
@@ -56,7 +80,20 @@ const App: React.FC = () => {
   const [selectedBookingId, setSelectedBookingId] = useState<string | null>(null);
   const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false);
   const [bookingPrefill, setBookingPrefill] = useState<{date: string, time: string, studio: string} | undefined>(undefined);
-  const [googleToken, setGoogleToken] = useState<string | null>(null); // In real app, manage via Auth provider or state
+  
+  // PERSISTENT GOOGLE TOKEN
+  const [googleToken, setGoogleToken] = useState<string | null>(() => {
+      return sessionStorage.getItem('lumina_g_token');
+  });
+
+  const handleSetGoogleToken = (token: string | null) => {
+      setGoogleToken(token);
+      if (token) {
+          sessionStorage.setItem('lumina_g_token', token);
+      } else {
+          sessionStorage.removeItem('lumina_g_token');
+      }
+  };
 
   // Client Portal State
   const [portalBooking, setPortalBooking] = useState<Booking | null>(null);
@@ -100,10 +137,6 @@ const App: React.FC = () => {
                     console.error("Studio not found");
                 }
 
-                // Fetch Packages (Public)
-                // Note: In real app, use security rules to allow public read of packages
-                // For now, assuming logic inside components handles empty if fetch fails due to rules
-                
                 // Fetch Portal Booking if ID exists
                 if (portalBookingId) {
                     const bookingRef = doc(db, "bookings", portalBookingId);
@@ -132,10 +165,6 @@ const App: React.FC = () => {
         if (userDocSnap.exists()) {
             const userData = userDocSnap.data() as User;
             setCurrentUser({ ...userData, id: user.uid }); // Ensure ID matches Auth UID
-            
-            // Initialize Listeners for this Studio/User
-            // In a real multi-tenant app, we would filter by studioId or ownerId
-            // Here we assume single-tenant or owner-based querying
             
             // Fix: Fallback to user.uid if role logic fails or for simple single-user setup
             const ownerId = userData.role === 'OWNER' ? user.uid : user.uid; 
@@ -204,6 +233,7 @@ const App: React.FC = () => {
 
   const handleLogout = async () => {
       await signOut(auth);
+      sessionStorage.removeItem('lumina_g_token'); // Clear session
       setCurrentUser(null);
       setViewMode('LAUNCHER');
   };
@@ -308,38 +338,11 @@ const App: React.FC = () => {
           
           const ownerId = authUser.uid; // Reliable source of truth for rules
           
-          // Prepare clean booking object with explicit ownerId and sanitization
-          // We convert undefined optional fields to their types to avoid Firestore rejection if rules are strict
           const bookingWithAuth: Booking = { 
-              id: newBooking.id,
+              ...newBooking,
               ownerId: ownerId,
-              clientName: newBooking.clientName,
-              clientPhone: newBooking.clientPhone || '',
-              clientId: newBooking.clientId,
-              date: newBooking.date,
-              timeStart: newBooking.timeStart || '09:00',
-              duration: newBooking.duration || 1,
-              package: newBooking.package || 'Custom',
-              price: Number(newBooking.price) || 0,
               paidAmount: paymentDetails?.amount || 0, 
-              status: newBooking.status || 'BOOKED',
               photographerId: newBooking.photographerId || ownerId, // Fallback to owner if empty
-              editorId: newBooking.editorId || '',
-              studio: newBooking.studio || 'Main Studio',
-              contractStatus: newBooking.contractStatus || 'PENDING',
-              contractSignedDate: newBooking.contractSignedDate || '',
-              contractSignature: newBooking.contractSignature || '',
-              items: newBooking.items || [],
-              notes: newBooking.notes || '',
-              // discount: newBooking.discount, // Optional
-              deliveryUrl: newBooking.deliveryUrl || '',
-              tasks: newBooking.tasks || [],
-              logs: newBooking.logs || [],
-              files: newBooking.files || [],
-              comments: newBooking.comments || [],
-              timeLogs: newBooking.timeLogs || [],
-              taxSnapshot: newBooking.taxSnapshot || 0,
-              // costSnapshot: newBooking.costSnapshot // Optional
           };
           
           // 1. Save Booking
@@ -372,8 +375,6 @@ const App: React.FC = () => {
               // Update Account Balance
               try {
                   const accountRef = doc(db, "accounts", paymentDetails.accountId);
-                  // We use updateDoc directly; if account doesn't exist (permission error reading it?), this might fail.
-                  // Ideally, we assume the account ID is valid from the select dropdown.
                   const accSnap = await getDoc(accountRef);
                   if (accSnap.exists()) {
                       const currentBal = accSnap.data().balance || 0;
@@ -381,7 +382,6 @@ const App: React.FC = () => {
                   }
               } catch (accError) {
                   console.error("Failed to update account balance:", accError);
-                  // Don't block the UI flow for this, booking is saved
               }
           }
       } catch (e) {
@@ -422,7 +422,6 @@ const App: React.FC = () => {
               onBooking={(data) => {
                   console.log("Public Booking:", data);
                   alert("Booking submitted! Check your email for confirmation.");
-                  // Real app would trigger Cloud Function or API here
               }}
           />
       );
@@ -436,15 +435,14 @@ const App: React.FC = () => {
                   <LandingPageView 
                       key="landing"
                       onLogin={() => setViewMode('OS')}
-                      onRegister={() => setViewMode('SITE')} // Reusing state for register view
+                      onRegister={() => setViewMode('SITE')} 
                   />
               ) : viewMode === 'SITE' ? (
                   <RegisterView 
                       key="register"
                       onLoginLink={() => setViewMode('OS')}
                       onRegisterSuccess={(user) => {
-                          setCurrentUser(user); // Optimistic
-                          // Auth listener will confirm
+                          setCurrentUser(user); 
                       }}
                       onHome={() => setViewMode('LAUNCHER')}
                   />
@@ -496,6 +494,26 @@ const App: React.FC = () => {
       );
   }
 
+  // --- RENDER VIEW GUARD ---
+  const renderView = () => {
+      if (!VIEW_PERMISSIONS[currentView]?.includes(currentUser.role)) {
+          return <AccessDenied />;
+      }
+
+      switch (currentView) {
+          case 'dashboard': return <DashboardView user={currentUser} bookings={bookings} transactions={transactions} onSelectBooking={(id) => { setSelectedBookingId(id); setIsProjectDrawerOpen(true); }} selectedDate={new Date().toISOString().split('T')[0]} onNavigate={setCurrentView} config={config}/>;
+          case 'calendar': return <CalendarView bookings={bookings} currentDate={new Date().toISOString().split('T')[0]} users={users} rooms={config.rooms} onDateChange={() => {}} onNewBooking={(prefill) => { setBookingPrefill(prefill); setIsNewBookingModalOpen(true); }} onSelectBooking={(id) => { setSelectedBookingId(id); setIsProjectDrawerOpen(true); }} onUpdateBooking={async (b) => { setBookings(prev => prev.map(x => x.id === b.id ? b : x)); await setDoc(doc(db, "bookings", b.id), b); }} googleToken={googleToken}/>;
+          case 'production': return <ProductionView bookings={bookings} onSelectBooking={(id) => { setSelectedBookingId(id); setIsProjectDrawerOpen(true); }} currentUser={currentUser} onUpdateBooking={async (b) => { setBookings(prev => prev.map(x => x.id === b.id ? b : x)); await setDoc(doc(db, "bookings", b.id), b); }} config={config}/>;
+          case 'inventory': return <InventoryView assets={assets} users={users} onAddAsset={async (a) => { await setDoc(doc(db, "assets", a.id), { ...a, ownerId: currentUser.id }); }} onUpdateAsset={async (a) => { await setDoc(doc(db, "assets", a.id), a); }} onDeleteAsset={async (id) => { await deleteDoc(doc(db, "assets", id)); }} config={config}/>;
+          case 'clients': return <ClientsView clients={clients} bookings={bookings} onAddClient={handleAddClient} onUpdateClient={async (c) => { await setDoc(doc(db, "clients", c.id), c); }} onDeleteClient={async (id) => { await deleteDoc(doc(db, "clients", id)); }} onSelectBooking={(id) => { setSelectedBookingId(id); setIsProjectDrawerOpen(true); }} config={config}/>;
+          case 'team': return <TeamView users={users} bookings={bookings} onAddUser={async (u) => { await setDoc(doc(db, "users", u.id), u); }} onUpdateUser={async (u) => { await setDoc(doc(db, "users", u.id), u); }} onDeleteUser={async (id) => { await deleteDoc(doc(db, "users", id)); }} onRecordExpense={(data) => { const tid = `t-${Date.now()}`; const txn = { id: tid, date: new Date().toISOString(), type: 'EXPENSE', status: 'COMPLETED', ownerId: currentUser.id, ...data }; setDoc(doc(db, "transactions", tid), txn); }}/>;
+          case 'finance': return <FinanceView accounts={accounts} metrics={metrics} bookings={bookings} users={users} transactions={transactions} config={config} onTransfer={async (fromId, toId, amount) => { const batch = writeBatch(db); const fromAcc = accounts.find(a => a.id === fromId); const toAcc = accounts.find(a => a.id === toId); if (fromAcc && toAcc && fromAcc.balance >= amount) { batch.update(doc(db, "accounts", fromId), { balance: fromAcc.balance - amount }); batch.update(doc(db, "accounts", toId), { balance: toAcc.balance + amount }); const tid = `t-${Date.now()}`; batch.set(doc(db, "transactions", tid), { id: tid, date: new Date().toISOString(), description: `Transfer to ${toAcc.name}`, amount: amount, type: 'TRANSFER', accountId: fromId, category: 'Internal Transfer', status: 'COMPLETED', ownerId: currentUser.id }); await batch.commit(); } }} onRecordExpense={async (data) => { const batch = writeBatch(db); const acc = accounts.find(a => a.id === data.accountId); const tid = `t-${Date.now()}`; batch.set(doc(db, "transactions", tid), { id: tid, date: new Date().toISOString(), type: 'EXPENSE', status: 'COMPLETED', ownerId: currentUser.id, ...data }); if (acc) { batch.update(doc(db, "accounts", acc.id), { balance: acc.balance - data.amount }); } await batch.commit(); }} onSettleBooking={async (bookingId, amount, accountId) => { const batch = writeBatch(db); const booking = bookings.find(b => b.id === bookingId); const acc = accounts.find(a => a.id === accountId); if (booking && acc) { batch.update(doc(db, "bookings", bookingId), { paidAmount: booking.paidAmount + amount }); batch.update(doc(db, "accounts", accountId), { balance: acc.balance + amount }); const tid = `t-${Date.now()}`; batch.set(doc(db, "transactions", tid), { id: tid, date: new Date().toISOString(), description: amount > 0 ? `Payment - ${booking.clientName}` : `Refund - ${booking.clientName}`, amount: Math.abs(amount), type: amount > 0 ? 'INCOME' : 'EXPENSE', accountId: accountId, category: 'Sales / Booking', status: 'COMPLETED', bookingId: bookingId, ownerId: currentUser.id }); await batch.commit(); } }} onDeleteTransaction={async (id) => { await deleteDoc(doc(db, "transactions", id)); }} onAddAccount={async (acc) => { await setDoc(doc(db, "accounts", acc.id), { ...acc, ownerId: currentUser.id }); }} onUpdateAccount={async (acc) => { await setDoc(doc(db, "accounts", acc.id), acc); }}/>;
+          case 'analytics': return <AnalyticsView bookings={bookings} packages={packages} transactions={transactions}/>;
+          case 'settings': return <SettingsView packages={packages} config={config} bookings={bookings} assets={assets} currentUser={currentUser} googleToken={googleToken} setGoogleToken={handleSetGoogleToken} onAddPackage={async (pkg) => { await setDoc(doc(db, "packages", pkg.id), { ...pkg, ownerId: currentUser.id }); }} onUpdatePackage={async (pkg) => { await setDoc(doc(db, "packages", pkg.id), pkg); }} onDeletePackage={async (id) => { await deleteDoc(doc(db, "packages", id)); }} onUpdateConfig={async (newConfig) => { setConfig(newConfig); await setDoc(doc(db, "studios", currentUser.id), newConfig); }} onUpdateUserProfile={async (user) => { await setDoc(doc(db, "users", user.id), user); setCurrentUser(user); }} onDeleteAccount={async () => { if (window.confirm("CRITICAL: Are you sure? This will wipe all your data.")) { alert("Account deletion simulation."); } }}/>;
+          default: return <AccessDenied />;
+      }
+  };
+
   // MAIN OS
   return (
     <div className="flex h-screen bg-lumina-base text-lumina-text font-sans overflow-hidden">
@@ -523,254 +541,7 @@ const App: React.FC = () => {
 
         <div className="flex-1 overflow-y-auto custom-scrollbar p-4 lg:p-8 pb-24 lg:pb-8 scroll-smooth">
             <AnimatePresence mode="wait">
-                {currentView === 'dashboard' && (
-                    <DashboardView 
-                        key="dashboard" 
-                        user={currentUser} 
-                        bookings={bookings} 
-                        transactions={transactions} 
-                        onSelectBooking={(id) => { setSelectedBookingId(id); setIsProjectDrawerOpen(true); }}
-                        selectedDate={new Date().toISOString().split('T')[0]}
-                        onNavigate={setCurrentView}
-                        config={config}
-                    />
-                )}
-                {currentView === 'calendar' && (
-                    <CalendarView 
-                        key="calendar"
-                        bookings={bookings}
-                        currentDate={new Date().toISOString().split('T')[0]}
-                        users={users}
-                        rooms={config.rooms}
-                        onDateChange={() => {}}
-                        onNewBooking={(prefill) => { setBookingPrefill(prefill); setIsNewBookingModalOpen(true); }}
-                        onSelectBooking={(id) => { setSelectedBookingId(id); setIsProjectDrawerOpen(true); }}
-                        onUpdateBooking={async (b) => {
-                            // Optimistic Update
-                            setBookings(prev => prev.map(x => x.id === b.id ? b : x));
-                            await setDoc(doc(db, "bookings", b.id), b);
-                        }}
-                        googleToken={googleToken}
-                    />
-                )}
-                {currentView === 'production' && (
-                    <ProductionView 
-                        key="production"
-                        bookings={bookings}
-                        onSelectBooking={(id) => { setSelectedBookingId(id); setIsProjectDrawerOpen(true); }}
-                        currentUser={currentUser}
-                        onUpdateBooking={async (b) => {
-                            setBookings(prev => prev.map(x => x.id === b.id ? b : x));
-                            await setDoc(doc(db, "bookings", b.id), b);
-                        }}
-                        config={config}
-                    />
-                )}
-                {currentView === 'inventory' && (
-                    <InventoryView 
-                        key="inventory"
-                        assets={assets} 
-                        users={users}
-                        onAddAsset={async (a) => {
-                            await setDoc(doc(db, "assets", a.id), { ...a, ownerId: currentUser.id });
-                        }}
-                        onUpdateAsset={async (a) => {
-                            await setDoc(doc(db, "assets", a.id), a);
-                        }}
-                        onDeleteAsset={async (id) => {
-                            await deleteDoc(doc(db, "assets", id));
-                        }}
-                        config={config}
-                    />
-                )}
-                {currentView === 'clients' && (
-                    <ClientsView 
-                        key="clients"
-                        clients={clients}
-                        bookings={bookings}
-                        onAddClient={handleAddClient}
-                        onUpdateClient={async (c) => {
-                            await setDoc(doc(db, "clients", c.id), c);
-                        }}
-                        onDeleteClient={async (id) => {
-                            await deleteDoc(doc(db, "clients", id));
-                        }}
-                        onSelectBooking={(id) => { setSelectedBookingId(id); setIsProjectDrawerOpen(true); }}
-                        config={config}
-                    />
-                )}
-                {currentView === 'team' && (
-                    <TeamView 
-                        key="team"
-                        users={users}
-                        bookings={bookings}
-                        onAddUser={async (u) => {
-                            await setDoc(doc(db, "users", u.id), u);
-                        }}
-                        onUpdateUser={async (u) => {
-                            await setDoc(doc(db, "users", u.id), u);
-                        }}
-                        onDeleteUser={async (id) => {
-                            await deleteDoc(doc(db, "users", id));
-                        }}
-                        onRecordExpense={(data) => {
-                            // Shortcut to record commission payout
-                            const tid = `t-${Date.now()}`;
-                            const txn = {
-                                id: tid,
-                                date: new Date().toISOString(),
-                                type: 'EXPENSE',
-                                status: 'COMPLETED',
-                                ownerId: currentUser.id,
-                                ...data
-                            };
-                            setDoc(doc(db, "transactions", tid), txn);
-                        }}
-                    />
-                )}
-                {currentView === 'finance' && (
-                    <FinanceView 
-                        key="finance"
-                        accounts={accounts}
-                        metrics={metrics}
-                        bookings={bookings}
-                        users={users}
-                        transactions={transactions}
-                        config={config}
-                        onTransfer={async (fromId, toId, amount) => {
-                            const batch = writeBatch(db);
-                            const fromAcc = accounts.find(a => a.id === fromId);
-                            const toAcc = accounts.find(a => a.id === toId);
-                            
-                            if (fromAcc && toAcc && fromAcc.balance >= amount) {
-                                batch.update(doc(db, "accounts", fromId), { balance: fromAcc.balance - amount });
-                                batch.update(doc(db, "accounts", toId), { balance: toAcc.balance + amount });
-                                
-                                const tid = `t-${Date.now()}`;
-                                batch.set(doc(db, "transactions", tid), {
-                                    id: tid,
-                                    date: new Date().toISOString(),
-                                    description: `Transfer to ${toAcc.name}`,
-                                    amount: amount,
-                                    type: 'TRANSFER',
-                                    accountId: fromId,
-                                    category: 'Internal Transfer',
-                                    status: 'COMPLETED',
-                                    ownerId: currentUser.id
-                                });
-                                
-                                await batch.commit();
-                            }
-                        }}
-                        onRecordExpense={async (data) => {
-                            const batch = writeBatch(db);
-                            const acc = accounts.find(a => a.id === data.accountId);
-                            
-                            // 1. Create Transaction
-                            const tid = `t-${Date.now()}`;
-                            batch.set(doc(db, "transactions", tid), {
-                                id: tid,
-                                date: new Date().toISOString(),
-                                type: 'EXPENSE',
-                                status: 'COMPLETED',
-                                ownerId: currentUser.id,
-                                ...data
-                            });
-
-                            // 2. Update Balance
-                            if (acc) {
-                                batch.update(doc(db, "accounts", acc.id), { balance: acc.balance - data.amount });
-                            }
-
-                            await batch.commit();
-                        }}
-                        onSettleBooking={async (bookingId, amount, accountId) => {
-                            const batch = writeBatch(db);
-                            const booking = bookings.find(b => b.id === bookingId);
-                            const acc = accounts.find(a => a.id === accountId);
-                            
-                            if (booking && acc) {
-                                // Update Booking
-                                batch.update(doc(db, "bookings", bookingId), { 
-                                    paidAmount: booking.paidAmount + amount 
-                                });
-                                
-                                // Update Account
-                                batch.update(doc(db, "accounts", accountId), {
-                                    balance: acc.balance + amount
-                                });
-
-                                // Create Transaction
-                                const tid = `t-${Date.now()}`;
-                                batch.set(doc(db, "transactions", tid), {
-                                    id: tid,
-                                    date: new Date().toISOString(),
-                                    description: amount > 0 ? `Payment - ${booking.clientName}` : `Refund - ${booking.clientName}`,
-                                    amount: Math.abs(amount),
-                                    type: amount > 0 ? 'INCOME' : 'EXPENSE',
-                                    accountId: accountId,
-                                    category: 'Sales / Booking',
-                                    status: 'COMPLETED',
-                                    bookingId: bookingId,
-                                    ownerId: currentUser.id
-                                });
-
-                                await batch.commit();
-                            }
-                        }}
-                        onDeleteTransaction={async (id) => {
-                            await deleteDoc(doc(db, "transactions", id));
-                        }}
-                        onAddAccount={async (acc) => {
-                            await setDoc(doc(db, "accounts", acc.id), { ...acc, ownerId: currentUser.id });
-                        }}
-                        onUpdateAccount={async (acc) => {
-                            await setDoc(doc(db, "accounts", acc.id), acc);
-                        }}
-                    />
-                )}
-                {currentView === 'analytics' && (
-                    <AnalyticsView 
-                        key="analytics"
-                        bookings={bookings}
-                        packages={packages}
-                        transactions={transactions}
-                    />
-                )}
-                {currentView === 'settings' && (
-                    <SettingsView 
-                        key="settings"
-                        packages={packages}
-                        config={config}
-                        bookings={bookings}
-                        assets={assets}
-                        currentUser={currentUser}
-                        googleToken={googleToken}
-                        setGoogleToken={setGoogleToken}
-                        onAddPackage={async (pkg) => {
-                            await setDoc(doc(db, "packages", pkg.id), { ...pkg, ownerId: currentUser.id });
-                        }}
-                        onUpdatePackage={async (pkg) => {
-                            await setDoc(doc(db, "packages", pkg.id), pkg);
-                        }}
-                        onDeletePackage={async (id) => {
-                            await deleteDoc(doc(db, "packages", id));
-                        }}
-                        onUpdateConfig={async (newConfig) => {
-                            setConfig(newConfig);
-                            await setDoc(doc(db, "studios", currentUser.id), newConfig);
-                        }}
-                        onUpdateUserProfile={async (user) => {
-                            await setDoc(doc(db, "users", user.id), user);
-                            setCurrentUser(user);
-                        }}
-                        onDeleteAccount={async () => {
-                            if (window.confirm("CRITICAL: Are you sure? This will wipe all your data.")) {
-                                alert("Account deletion simulation.");
-                            }
-                        }}
-                    />
-                )}
+               {renderView()}
             </AnimatePresence>
         </div>
 

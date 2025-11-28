@@ -3,7 +3,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { User, Account, Booking, Client, StudioConfig, Asset, Package } from '../types';
 import { PACKAGES } from '../data';
-import { X, Search, ChevronRight, ChevronLeft, Calendar, Clock, User as UserIcon, CheckCircle2, AlertCircle, Plus, DollarSign, Briefcase, MapPin, Loader2 } from 'lucide-react';
+import { X, Search, ChevronRight, ChevronLeft, Calendar, Clock, User as UserIcon, CheckCircle2, AlertCircle, Plus, DollarSign, Briefcase, MapPin, Loader2, Save } from 'lucide-react';
 
 const Motion = motion as any;
 
@@ -30,6 +30,9 @@ const NewBookingModal: React.FC<NewBookingModalProps> = ({ isOpen, onClose, phot
   const [isCreatingClient, setIsCreatingClient] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   
+  // DRAFT KEY
+  const DRAFT_KEY = 'lumina_booking_draft';
+
   const [bookingForm, setBookingForm] = useState<{
       date: string;
       timeStart: string;
@@ -53,16 +56,21 @@ const NewBookingModal: React.FC<NewBookingModalProps> = ({ isOpen, onClose, phot
   const [newClientForm, setNewClientForm] = useState({ name: '', phone: '', email: '', category: 'NEW' });
   const [paymentForm, setPaymentForm] = useState({ amount: 0, accountId: '' });
 
-  // Initialize Account
-  useEffect(() => {
-      if (accounts.length > 0 && !paymentForm.accountId) {
-          setPaymentForm(prev => ({ ...prev, accountId: accounts[0].id }));
-      }
-  }, [accounts]);
-
-  // Handle Initial Data
+  // --- DRAFT & INITIALIZATION LOGIC ---
   useEffect(() => {
     if (isOpen) {
+        // 1. Try to load draft first
+        const savedDraft = localStorage.getItem(DRAFT_KEY);
+        if (savedDraft && !initialData) {
+            try {
+                const parsed = JSON.parse(savedDraft);
+                setBookingForm(parsed.form);
+                if (parsed.client) setSelectedClient(parsed.client);
+                setStep(parsed.step || 1);
+            } catch (e) { console.error("Draft parse error", e); }
+        }
+
+        // 2. If initialData provided (e.g. from Calendar click), override draft
         if (initialData) {
             setBookingForm(prev => ({
                 ...prev,
@@ -70,14 +78,63 @@ const NewBookingModal: React.FC<NewBookingModalProps> = ({ isOpen, onClose, phot
                 timeStart: initialData.time,
                 studio: initialData.studio
             }));
+            setStep(1); 
         }
-        setStep(1); // Always start at client selection
+        
+        // 3. Reset submission state
         setIsSubmitting(false);
     }
   }, [isOpen, initialData]);
 
+  // --- AUTO SAVE EFFECT ---
+  useEffect(() => {
+      if (isOpen) {
+          const draftData = {
+              form: bookingForm,
+              client: selectedClient,
+              step: step
+          };
+          localStorage.setItem(DRAFT_KEY, JSON.stringify(draftData));
+      }
+  }, [bookingForm, selectedClient, step, isOpen]);
+
+  // Initialize Account
+  useEffect(() => {
+      if (accounts.length > 0 && !paymentForm.accountId) {
+          setPaymentForm(prev => ({ ...prev, accountId: accounts[0].id }));
+      }
+  }, [accounts]);
+
   const filteredClients = clients.filter(c => c.name.toLowerCase().includes(clientSearch.toLowerCase()) || c.phone.includes(clientSearch));
   const availablePackages = config.site?.showPricing ? (packages.length > 0 ? packages : PACKAGES) : (packages.length > 0 ? packages : PACKAGES);
+
+  // --- CONFLICT DETECTION ---
+  const conflictError = useMemo(() => {
+      if (!bookingForm.date || !bookingForm.timeStart || !bookingForm.studio) return null;
+
+      const [newStartH, newStartM] = bookingForm.timeStart.split(':').map(Number);
+      const newStartMins = newStartH * 60 + newStartM;
+      const newEndMins = newStartMins + (bookingForm.duration * 60);
+
+      const conflictingBooking = bookings.find(b => {
+          if (b.status === 'CANCELLED') return false;
+          if (b.date !== bookingForm.date) return false;
+          if (b.studio !== bookingForm.studio) return false;
+
+          const [bStartH, bStartM] = b.timeStart.split(':').map(Number);
+          const bStartMins = bStartH * 60 + bStartM;
+          const bEndMins = bStartMins + (b.duration * 60);
+
+          // Logic: (StartA < EndB) and (EndA > StartB)
+          return (newStartMins < bEndMins) && (newEndMins > bStartMins);
+      });
+
+      if (conflictingBooking) {
+          return `Time conflict with ${conflictingBooking.clientName} (${conflictingBooking.timeStart} - ${conflictingBooking.duration}h) in ${conflictingBooking.studio}`;
+      }
+      return null;
+  }, [bookingForm, bookings]);
+
 
   const handleCreateClient = () => {
       if (onAddClient && newClientForm.name) {
@@ -117,12 +174,12 @@ const NewBookingModal: React.FC<NewBookingModalProps> = ({ isOpen, onClose, phot
 
   const isStepValid = () => {
       if (step === 1) return !!selectedClient;
-      if (step === 2) return !!bookingForm.packageId && !!bookingForm.date && !!bookingForm.timeStart;
+      if (step === 2) return !!bookingForm.packageId && !!bookingForm.date && !!bookingForm.timeStart && !conflictError;
       return true;
   };
 
   const handleSubmit = async () => {
-      if (onAddBooking && selectedClient) {
+      if (onAddBooking && selectedClient && !conflictError) {
           if (paymentForm.amount > 0 && !paymentForm.accountId) {
               alert("Please select a valid account for deposit.");
               return;
@@ -147,6 +204,8 @@ const NewBookingModal: React.FC<NewBookingModalProps> = ({ isOpen, onClose, phot
               photographerId: bookingForm.photographerId,
               studio: bookingForm.studio,
               contractStatus: 'PENDING',
+              contractSignedDate: '',
+              contractSignature: '',
               items: [
                   { 
                       id: `i-${Date.now()}`, 
@@ -157,15 +216,16 @@ const NewBookingModal: React.FC<NewBookingModalProps> = ({ isOpen, onClose, phot
                   }
               ],
               taxSnapshot: config.taxRate,
-              notes: bookingForm.notes
+              notes: bookingForm.notes,
+              logs: [] // Initialize logs
           };
 
           try {
               await onAddBooking(newBooking, paymentForm.amount > 0 ? paymentForm : undefined);
+              localStorage.removeItem(DRAFT_KEY); // Clear draft on success
               onClose();
           } catch (e) {
               console.error("Submission failed inside modal:", e);
-              // App.tsx handles the alert, we just stop loading
           } finally {
               setIsSubmitting(false);
           }
@@ -187,7 +247,11 @@ const NewBookingModal: React.FC<NewBookingModalProps> = ({ isOpen, onClose, phot
         {/* Sidebar Stepper (Desktop) */}
         <div className="hidden lg:flex w-64 bg-lumina-base border-r border-lumina-highlight flex-col p-6 justify-between">
             <div>
-                <h2 className="text-xl font-display font-bold text-white mb-8">New Session</h2>
+                <div className="flex justify-between items-center mb-8">
+                    <h2 className="text-xl font-display font-bold text-white">New Session</h2>
+                    {localStorage.getItem(DRAFT_KEY) && <span className="text-[10px] text-emerald-400 flex items-center gap-1"><Save size={10}/> Saved</span>}
+                </div>
+                
                 <div className="space-y-6 relative">
                     {/* Connection Line */}
                     <div className="absolute left-[11px] top-2 bottom-2 w-0.5 bg-lumina-highlight -z-10"></div>
@@ -373,6 +437,14 @@ const NewBookingModal: React.FC<NewBookingModalProps> = ({ isOpen, onClose, phot
                                                 </select>
                                             </div>
                                         </div>
+                                        
+                                        {/* CONFLICT WARNING */}
+                                        {conflictError && (
+                                            <div className="p-3 bg-rose-500/10 border border-rose-500/30 rounded-lg flex items-start gap-2">
+                                                <AlertCircle className="text-rose-500 w-4 h-4 mt-0.5 shrink-0" />
+                                                <span className="text-xs text-rose-400 font-bold">{conflictError}</span>
+                                            </div>
+                                        )}
                                     </div>
 
                                     <div className="space-y-4">
