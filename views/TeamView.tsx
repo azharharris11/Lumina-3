@@ -7,8 +7,6 @@ import TeamMemberCard from '../components/team/TeamMemberCard';
 import TeamMemberModal from '../components/team/TeamMemberModal';
 import TeamAvailabilityModal from '../components/team/TeamAvailabilityModal';
 
-const Motion = motion as any;
-
 const TeamView: React.FC<TeamViewProps> = ({ users, bookings, onAddUser, onUpdateUser, onDeleteUser, onRecordExpense }) => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editMode, setEditMode] = useState(false);
@@ -168,8 +166,8 @@ const TeamView: React.FC<TeamViewProps> = ({ users, bookings, onAddUser, onUpdat
       <AnimatePresence>
           {viewScheduleUser && (
               <>
-                 <Motion.div initial={{opacity:0}} animate={{opacity:1}} exit={{opacity:0}} onClick={() => setViewScheduleUser(null)} className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[100]" />
-                 <Motion.div 
+                 <motion.div initial={{opacity:0}} animate={{opacity:1}} exit={{opacity:0}} onClick={() => setViewScheduleUser(null)} className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[100]" />
+                 <motion.div 
                     initial={{x: '100%'}} animate={{x:0}} exit={{x: '100%'}} 
                     className="fixed top-0 right-0 h-full w-96 bg-lumina-surface border-l border-lumina-highlight z-[110] p-6 shadow-2xl flex flex-col"
                  >
@@ -198,7 +196,7 @@ const TeamView: React.FC<TeamViewProps> = ({ users, bookings, onAddUser, onUpdat
                              ))
                          )}
                      </div>
-                 </Motion.div>
+                 </motion.div>
               </>
           )}
       </AnimatePresence>

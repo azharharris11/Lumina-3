@@ -1,6 +1,6 @@
 
 import React, { useState } from 'react';
-import { AnimatePresence } from 'framer-motion';
+import { AnimatePresence, motion } from 'framer-motion';
 import { Wallet, FileText, PieChart, ArrowRightLeft, MinusCircle } from 'lucide-react';
 import { FinanceViewProps, Account } from '../types';
 import InvoiceModal from '../components/InvoiceModal';

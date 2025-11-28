@@ -1,7 +1,7 @@
 
-import React, { useState } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
-import { Layout, Layers, Image as ImageIcon, Megaphone, File, Plus, Palette, Check, Save, ArrowLeft, ArrowUp, ArrowDown, Trash2, GripVertical, Home, PanelLeftClose, ChevronUp, ChevronDown, MapPin } from 'lucide-react';
+import React from 'react';
+import { motion, AnimatePresence, Reorder } from 'framer-motion';
+import { Layout, Layers, Image as ImageIcon, Megaphone, File, Plus, Palette, Check, Save, ArrowLeft, Trash2, GripVertical, Home, PanelLeftClose, ChevronUp, ChevronDown, Search } from 'lucide-react';
 import { SiteConfig, SectionType, SiteTheme, SitePage, SiteSection } from '../../types';
 import SiteSectionEditor from './SiteSectionEditor';
 
@@ -25,6 +25,7 @@ interface SiteBuilderSidebarProps {
     handleUpdateSection: (id: string, content: any) => void;
     handleDeleteSection: (id: string) => void;
     handleMoveSection: (index: number, direction: 'UP' | 'DOWN') => void;
+    handleReorderSections: (newOrder: SiteSection[]) => void;
     getActiveSections: () => SiteSection[];
     selectedSectionId: string | null;
     setSelectedSectionId: (id: string | null) => void;
@@ -34,14 +35,20 @@ interface SiteBuilderSidebarProps {
     setNewPageName: (name: string) => void;
     newGalleryUrl: string;
     setNewGalleryUrl: (url: string) => void;
+    canUndo: boolean;
+    canRedo: boolean;
+    onUndo: () => void;
+    onRedo: () => void;
 }
 
 const SiteBuilderSidebar: React.FC<SiteBuilderSidebarProps> = (props) => {
     const {
         isSidebarOpen, setIsSidebarOpen, isMobile, localSite, activeTab, setActiveTab, activePageId, setActivePageId, activePageData, hasChanges,
-        themes, onExit, onSave, handleGlobalChange, handleContentChange, handleAddSection, handleUpdateSection, handleDeleteSection, handleMoveSection,
+        themes, onExit, onSave, handleGlobalChange, handleContentChange, handleAddSection, handleUpdateSection, handleDeleteSection, handleReorderSections,
         getActiveSections, selectedSectionId, setSelectedSectionId, handleAddPage, handleDeletePage, newPageName, setNewPageName, newGalleryUrl, setNewGalleryUrl
     } = props;
+
+    const sections = getActiveSections();
 
     return (
         <motion.div 
@@ -125,7 +132,7 @@ const SiteBuilderSidebar: React.FC<SiteBuilderSidebarProps> = (props) => {
                                 { id: 'CONTENT', icon: Layout, label: 'Design' },
                                 { id: 'SECTIONS', icon: Layers, label: 'Blocks' },
                                 { id: 'GALLERY', icon: ImageIcon, label: 'Gallery' },
-                                { id: 'MARKETING', icon: Megaphone, label: 'Mktg' },
+                                { id: 'MARKETING', icon: Megaphone, label: 'SEO' },
                                 { id: 'PAGES', icon: File, label: 'Pages' }
                             ].map((tab) => (
                                 <button 
@@ -185,24 +192,26 @@ const SiteBuilderSidebar: React.FC<SiteBuilderSidebarProps> = (props) => {
                                                     </button>
                                                 ))}
                                             </div>
-                                            <div className="space-y-2">
-                                                {getActiveSections().map((section, index) => (
-                                                    <div key={section.id} className={`border rounded-xl transition-all ${selectedSectionId === section.id ? 'border-lumina-accent bg-lumina-accent/5' : 'border-lumina-highlight bg-lumina-surface'}`}>
-                                                        <div className="p-3 flex items-center gap-3 cursor-pointer" onClick={() => setSelectedSectionId(selectedSectionId === section.id ? null : section.id)}>
-                                                            <GripVertical size={14} className="text-lumina-muted"/>
-                                                            <span className="text-xs font-bold text-white flex-1 uppercase tracking-wider">{section.type.replace('_', ' ')}</span>
-                                                            <div className="flex gap-1"><button onClick={(e) => { e.stopPropagation(); handleMoveSection(index, 'UP'); }} className="p-1 hover:bg-lumina-highlight rounded text-lumina-muted"><ArrowUp size={12}/></button><button onClick={(e) => { e.stopPropagation(); handleMoveSection(index, 'DOWN'); }} className="p-1 hover:bg-lumina-highlight rounded text-lumina-muted"><ArrowDown size={12}/></button></div>
+                                            
+                                            <Reorder.Group axis="y" values={sections} onReorder={handleReorderSections} className="space-y-2">
+                                                {sections.map((section, index) => (
+                                                    <Reorder.Item key={section.id} value={section} className="relative">
+                                                        <div className={`border rounded-xl transition-all ${selectedSectionId === section.id ? 'border-lumina-accent bg-lumina-accent/5' : 'border-lumina-highlight bg-lumina-surface'}`}>
+                                                            <div className="p-3 flex items-center gap-3 cursor-grab active:cursor-grabbing" onClick={() => setSelectedSectionId(selectedSectionId === section.id ? null : section.id)}>
+                                                                <GripVertical size={14} className="text-lumina-muted hover:text-white"/>
+                                                                <span className="text-xs font-bold text-white flex-1 uppercase tracking-wider">{section.type.replace('_', ' ')}</span>
+                                                            </div>
+                                                            {selectedSectionId === section.id && (
+                                                                <SiteSectionEditor 
+                                                                    section={section}
+                                                                    onUpdate={handleUpdateSection}
+                                                                    onDelete={handleDeleteSection}
+                                                                />
+                                                            )}
                                                         </div>
-                                                        {selectedSectionId === section.id && (
-                                                            <SiteSectionEditor 
-                                                                section={section}
-                                                                onUpdate={handleUpdateSection}
-                                                                onDelete={handleDeleteSection}
-                                                            />
-                                                        )}
-                                                    </div>
+                                                    </Reorder.Item>
                                                 ))}
-                                            </div>
+                                            </Reorder.Group>
                                         </>
                                     )}
                                 </div>
@@ -221,6 +230,38 @@ const SiteBuilderSidebar: React.FC<SiteBuilderSidebarProps> = (props) => {
                                             </div>
                                         ))}
                                     </div>
+                                </div>
+                            )}
+                            {activeTab === 'MARKETING' && (
+                                <div className="space-y-6">
+                                    <div className="space-y-4">
+                                        <h3 className="text-xs font-bold text-lumina-muted uppercase tracking-widest flex items-center gap-2"><Search size={14}/> {activePageId === 'HOME' ? 'Global SEO' : 'Page SEO'}</h3>
+                                        <div>
+                                            <label className="text-[10px] font-bold text-lumina-muted uppercase mb-1 block">Meta Title</label>
+                                            <input 
+                                                value={activePageData.seo?.title || ''} 
+                                                onChange={(e) => handleContentChange('seo', { ...activePageData.seo, title: e.target.value })} 
+                                                className="w-full bg-lumina-base border border-lumina-highlight rounded-lg p-2 text-sm text-white focus:border-lumina-accent outline-none"
+                                                placeholder="Page Title for Google"
+                                            />
+                                        </div>
+                                        <div>
+                                            <label className="text-[10px] font-bold text-lumina-muted uppercase mb-1 block">Meta Description</label>
+                                            <textarea 
+                                                value={activePageData.seo?.description || ''} 
+                                                onChange={(e) => handleContentChange('seo', { ...activePageData.seo, description: e.target.value })} 
+                                                className="w-full bg-lumina-base border border-lumina-highlight rounded-lg p-2 text-sm text-white focus:border-lumina-accent outline-none min-h-[100px]"
+                                                placeholder="Description for search results"
+                                            />
+                                        </div>
+                                    </div>
+                                    {activePageId === 'HOME' && (
+                                        <div className="space-y-4 border-t border-lumina-highlight pt-6">
+                                            <h3 className="text-xs font-bold text-lumina-muted uppercase tracking-widest">Tracking Pixels</h3>
+                                            <div><label className="text-[10px] font-bold text-lumina-muted uppercase mb-1 block">Facebook Pixel ID</label><input value={localSite.pixels?.facebookPixelId || ''} onChange={(e) => handleGlobalChange('pixels', { ...localSite.pixels, facebookPixelId: e.target.value })} className="w-full bg-lumina-base border border-lumina-highlight rounded-lg p-2 text-sm text-white focus:border-lumina-accent outline-none"/></div>
+                                            <div><label className="text-[10px] font-bold text-lumina-muted uppercase mb-1 block">Google Analytics ID</label><input value={localSite.pixels?.googleTagId || ''} onChange={(e) => handleGlobalChange('pixels', { ...localSite.pixels, googleTagId: e.target.value })} className="w-full bg-lumina-base border border-lumina-highlight rounded-lg p-2 text-sm text-white focus:border-lumina-accent outline-none"/></div>
+                                        </div>
+                                    )}
                                 </div>
                             )}
                             {activeTab === 'PAGES' && (

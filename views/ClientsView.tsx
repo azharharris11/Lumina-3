@@ -8,8 +8,6 @@ import { STUDIO_CONFIG } from '../data';
 import ClientListItem from '../components/clients/ClientListItem';
 import ClientDetailPanel from '../components/clients/ClientDetailPanel';
 
-const Motion = motion as any;
-
 const ClientsView: React.FC<ClientsViewProps> = ({ clients, bookings, onUpdateClient, onAddClient, onDeleteClient, onSelectBooking, config }) => {
   const [selectedClient, setSelectedClient] = useState<Client | null>(null);
   const [isEditing, setIsEditing] = useState(false);
@@ -193,8 +191,8 @@ const ClientsView: React.FC<ClientsViewProps> = ({ clients, bookings, onUpdateCl
       <AnimatePresence>
           {isAddModalOpen && (
               <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
-                  <Motion.div initial={{opacity:0}} animate={{opacity:1}} exit={{opacity:0}} onClick={() => setIsAddModalOpen(false)} className="absolute inset-0 bg-black/80 backdrop-blur-sm" />
-                  <Motion.div initial={{scale:0.95, opacity:0}} animate={{scale:1, opacity:1}} exit={{scale:0.95, opacity:0}} className="relative bg-lumina-surface border border-lumina-highlight w-full max-w-md rounded-2xl p-6 shadow-2xl">
+                  <motion.div initial={{opacity:0}} animate={{opacity:1}} exit={{opacity:0}} onClick={() => setIsAddModalOpen(false)} className="absolute inset-0 bg-black/80 backdrop-blur-sm" />
+                  <motion.div initial={{scale:0.95, opacity:0}} animate={{scale:1, opacity:1}} exit={{scale:0.95, opacity:0}} className="relative bg-lumina-surface border border-lumina-highlight w-full max-w-md rounded-2xl p-6 shadow-2xl">
                       <div className="flex justify-between items-center mb-6">
                           <h2 className="text-xl font-bold text-white">Add New Client</h2>
                           <button onClick={() => setIsAddModalOpen(false)}><X className="text-lumina-muted hover:text-white" /></button>
@@ -226,7 +224,7 @@ const ClientsView: React.FC<ClientsViewProps> = ({ clients, bookings, onUpdateCl
                           </div>
                           <button onClick={handleAdd} className="w-full py-3 bg-lumina-accent text-lumina-base font-bold rounded-xl mt-4 hover:bg-lumina-accent/90">Create Client Profile</button>
                       </div>
-                  </Motion.div>
+                  </motion.div>
               </div>
           )}
       </AnimatePresence>

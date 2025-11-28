@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 
 interface SitePreviewFrameProps {
@@ -16,22 +16,19 @@ const SitePreviewFrame: React.FC<SitePreviewFrameProps> = ({ children, className
 
     const doc = contentRef.contentWindow.document;
     
-    // Inject Tailwind CSS
-    const script = doc.createElement('script');
-    script.src = "https://cdn.tailwindcss.com";
-    doc.head.appendChild(script);
+    // Performance Fix: Clone Parent Styles directly instead of fetching CDN
+    // This prevents Flash of Unstyled Content (FOUC) and works offline
+    const parentHeadHtml = window.document.head.innerHTML;
+    
+    // Clone all style/script tags from parent to iframe
+    doc.head.innerHTML = parentHeadHtml;
 
-    // Inject Fonts
-    const fontLink = doc.createElement('link');
-    fontLink.href = "https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600&family=Syne:wght@400;600;700;800&family=Playfair+Display:ital,wght@0,400;0,700;1,400&display=swap";
-    fontLink.rel = "stylesheet";
-    doc.head.appendChild(fontLink);
-
-    // Basic Styles reset
+    // Additional Basic Reset for Iframe Context
     const style = doc.createElement('style');
     style.innerHTML = `
-      body { margin: 0; overflow-x: hidden; }
+      body { margin: 0; overflow-x: hidden; background-color: #fff; }
       * { box-sizing: border-box; }
+      /* Inherit scrollbar styles from app */
       ::-webkit-scrollbar { width: 6px; }
       ::-webkit-scrollbar-track { background: #1c1917; }
       ::-webkit-scrollbar-thumb { background: #292524; border-radius: 3px; }

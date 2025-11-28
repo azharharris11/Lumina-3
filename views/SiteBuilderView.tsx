@@ -1,8 +1,8 @@
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { SiteBuilderViewProps, SitePage, SiteSection, SectionType, SiteTheme } from '../types';
-import { Globe, Smartphone, Monitor, PanelLeftOpen } from 'lucide-react';
+import { SiteBuilderViewProps, SitePage, SiteSection, SectionType, SiteTheme, SiteConfig } from '../types';
+import { Globe, Smartphone, Monitor, PanelLeftOpen, Undo2, Redo2 } from 'lucide-react';
 import SitePreviewFrame from '../components/site-builder/SitePreviewFrame';
 import SiteBuilderSidebar from '../components/site-builder/SiteBuilderSidebar';
 
@@ -19,8 +19,6 @@ import BoldTheme from '../components/site-builder/themes/BoldTheme';
 import ImpactTheme from '../components/site-builder/themes/ImpactTheme';
 import CleanSlateTheme from '../components/site-builder/themes/CleanSlateTheme';
 import AuthorityTheme from '../components/site-builder/themes/AuthorityTheme';
-
-const Motion = motion as any;
 
 interface ExtendedSiteBuilderViewProps extends SiteBuilderViewProps {
     onExit?: () => void;
@@ -42,10 +40,13 @@ const THEMES: {id: SiteTheme, label: string, color: string, textColor: string}[]
 ];
 
 const SiteBuilderView: React.FC<ExtendedSiteBuilderViewProps> = ({ config, packages, users, bookings, onUpdateConfig, onExit, onPublicBooking }) => {
-  const [localSite, setLocalSite] = useState(config.site);
+  // HISTORY STATE FOR UNDO/REDO
+  const [history, setHistory] = useState<SiteConfig[]>([config.site]);
+  const [historyIndex, setHistoryIndex] = useState(0);
+  const localSite = history[historyIndex];
+
   const [previewMode, setPreviewMode] = useState<'DESKTOP' | 'MOBILE'>('DESKTOP');
   const [activeTab, setActiveTab] = useState<'CONTENT' | 'SECTIONS' | 'GALLERY' | 'MARKETING' | 'PAGES'>('CONTENT');
-  const [hasChanges, setHasChanges] = useState(false);
   const [activePageId, setActivePageId] = useState<string>('HOME');
   const [selectedSectionId, setSelectedSectionId] = useState<string | null>(null);
   const [newPageName, setNewPageName] = useState('');
@@ -54,17 +55,64 @@ const SiteBuilderView: React.FC<ExtendedSiteBuilderViewProps> = ({ config, packa
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
 
+  // Check if current state differs from saved config
+  const hasChanges = useMemo(() => {
+      return JSON.stringify(localSite) !== JSON.stringify(config.site);
+  }, [localSite, config.site]);
+
+  const canUndo = historyIndex > 0;
+  const canRedo = historyIndex < history.length - 1;
+
+  // --- HISTORY MANAGEMENT ---
+  const updateSiteState = useCallback((newState: SiteConfig) => {
+      const newHistory = history.slice(0, historyIndex + 1);
+      newHistory.push(newState);
+      // Limit history stack size if needed (e.g. 50)
+      if (newHistory.length > 50) newHistory.shift();
+      setHistory(newHistory);
+      setHistoryIndex(newHistory.length - 1);
+  }, [history, historyIndex]);
+
+  const handleUndo = useCallback(() => {
+      if (canUndo) setHistoryIndex(prev => prev - 1);
+  }, [canUndo]);
+
+  const handleRedo = useCallback(() => {
+      if (canRedo) setHistoryIndex(prev => prev + 1);
+  }, [canRedo]);
+
+  // Keyboard Shortcuts for Undo/Redo (Cmd+Z, Cmd+Shift+Z)
+  useEffect(() => {
+      const handleKeyDown = (e: KeyboardEvent) => {
+          if ((e.metaKey || e.ctrlKey) && e.key === 'z') {
+              e.preventDefault();
+              if (e.shiftKey) handleRedo();
+              else handleUndo();
+          }
+      };
+      window.addEventListener('keydown', handleKeyDown);
+      return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [handleUndo, handleRedo]);
+
   useEffect(() => {
     const handleResize = () => setIsMobile(window.innerWidth < 768);
     window.addEventListener('resize', handleResize);
     return () => window.removeEventListener('resize', handleResize);
   }, []);
 
-  const publicUrl = `${window.location.origin}?site=${config.ownerId || 'me'}`;
-
+  // DATA LOSS PROTECTION (Window Unload)
   useEffect(() => {
-      setLocalSite(config.site);
-  }, [config.site]);
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+        if (hasChanges) {
+            e.preventDefault();
+            e.returnValue = ''; // Chrome requires returnValue to be set
+        }
+    };
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, [hasChanges]);
+
+  const publicUrl = `${window.location.origin}?site=${config.ownerId || 'me'}`;
 
   const activePageData = useMemo(() => {
       if (activePageId === 'HOME') return localSite;
@@ -72,14 +120,13 @@ const SiteBuilderView: React.FC<ExtendedSiteBuilderViewProps> = ({ config, packa
   }, [activePageId, localSite]);
 
   const handleContentChange = (key: string, value: any) => {
-      setHasChanges(true);
       if (activePageId === 'HOME') {
-          setLocalSite(prev => ({ ...prev, [key]: value }));
+          updateSiteState({ ...localSite, [key]: value });
       } else {
-          setLocalSite(prev => ({
-              ...prev,
-              pages: prev.pages?.map(p => p.id === activePageId ? { ...p, [key]: value } : p) || []
-          }));
+          updateSiteState({
+              ...localSite,
+              pages: localSite.pages?.map(p => p.id === activePageId ? { ...p, [key]: value } : p) || []
+          });
       }
   };
 
@@ -121,19 +168,12 @@ const SiteBuilderView: React.FC<ExtendedSiteBuilderViewProps> = ({ config, packa
       }
   };
 
-  const handleMoveSection = (index: number, direction: 'UP' | 'DOWN') => {
-      const sections = [...getActiveSections()];
-      if (direction === 'UP' && index > 0) {
-          [sections[index], sections[index - 1]] = [sections[index - 1], sections[index]];
-      } else if (direction === 'DOWN' && index < sections.length - 1) {
-          [sections[index], sections[index + 1]] = [sections[index + 1], sections[index]];
-      }
-      updateSections(sections);
+  const handleReorderSections = (newOrder: SiteSection[]) => {
+      updateSections(newOrder);
   };
 
   const handleGlobalChange = (key: string, value: any) => {
-      setLocalSite(prev => ({ ...prev, [key]: value }));
-      setHasChanges(true);
+      updateSiteState({ ...localSite, [key]: value });
   };
 
   const handleAddPage = () => {
@@ -152,23 +192,22 @@ const SiteBuilderView: React.FC<ExtendedSiteBuilderViewProps> = ({ config, packa
               gallery: [],
               sections: [] 
           };
-          setLocalSite(prev => ({ ...prev, pages: [...(prev.pages || []), newPage] }));
+          updateSiteState({ ...localSite, pages: [...(localSite.pages || []), newPage] });
           setNewPageName('');
-          setHasChanges(true);
       }
   };
 
   const handleDeletePage = (id: string) => {
       if (window.confirm('Are you sure? This page will be deleted.')) {
-          setLocalSite(prev => ({ ...prev, pages: prev.pages?.filter(p => p.id !== id) || [] }));
+          updateSiteState({ ...localSite, pages: localSite.pages?.filter(p => p.id !== id) || [] });
           if (activePageId === id) setActivePageId('HOME');
-          setHasChanges(true);
       }
   };
 
   const handleSave = () => {
       onUpdateConfig({ ...config, site: localSite });
-      setHasChanges(false);
+      // Reset history reference implicitly by parent update, 
+      // but here we keep the stack so user can undo post-save if needed
   };
 
   const renderTheme = () => {
@@ -238,7 +277,8 @@ const SiteBuilderView: React.FC<ExtendedSiteBuilderViewProps> = ({ config, packa
           handleAddSection={handleAddSection}
           handleUpdateSection={handleUpdateSection}
           handleDeleteSection={handleDeleteSection}
-          handleMoveSection={handleMoveSection}
+          handleMoveSection={() => {}} // Deprecated in favor of drag/drop reorder
+          handleReorderSections={handleReorderSections}
           getActiveSections={getActiveSections}
           selectedSectionId={selectedSectionId}
           setSelectedSectionId={setSelectedSectionId}
@@ -248,11 +288,25 @@ const SiteBuilderView: React.FC<ExtendedSiteBuilderViewProps> = ({ config, packa
           setNewPageName={setNewPageName}
           newGalleryUrl={newGalleryUrl}
           setNewGalleryUrl={setNewGalleryUrl}
+          canUndo={canUndo}
+          canRedo={canRedo}
+          onUndo={handleUndo}
+          onRedo={handleRedo}
       />
 
       {/* --- PREVIEW AREA --- */}
       <div className="flex-1 flex flex-col h-[60vh] md:h-full bg-[#111] relative order-1 md:order-2">
           <div className="h-14 border-b border-lumina-highlight flex justify-center items-center gap-4 bg-lumina-base z-10 shrink-0">
+              {/* Undo/Redo Controls */}
+              <div className="flex items-center gap-2 mr-4 border-r border-lumina-highlight pr-4">
+                  <button onClick={handleUndo} disabled={!canUndo} className="p-2 text-lumina-muted hover:text-white disabled:opacity-30 disabled:hover:text-lumina-muted" title="Undo (Cmd+Z)">
+                      <Undo2 size={18} />
+                  </button>
+                  <button onClick={handleRedo} disabled={!canRedo} className="p-2 text-lumina-muted hover:text-white disabled:opacity-30 disabled:hover:text-lumina-muted" title="Redo (Cmd+Shift+Z)">
+                      <Redo2 size={18} />
+                  </button>
+              </div>
+
               <button onClick={() => setPreviewMode('DESKTOP')} className={`p-2 rounded-lg transition-colors ${previewMode === 'DESKTOP' ? 'text-white bg-lumina-highlight' : 'text-lumina-muted hover:text-white'}`}><Monitor size={18} /></button>
               <button onClick={() => setPreviewMode('MOBILE')} className={`p-2 rounded-lg transition-colors ${previewMode === 'MOBILE' ? 'text-white bg-lumina-highlight' : 'text-lumina-muted hover:text-white'}`}><Smartphone size={18} /></button>
               <div className="w-px h-6 bg-lumina-highlight mx-2"></div>

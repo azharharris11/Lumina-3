@@ -161,6 +161,14 @@ export interface Booking {
   ownerId?: string;
 }
 
+export interface AssetLog {
+    id: string;
+    date: string;
+    action: 'CHECK_OUT' | 'RETURN' | 'MAINTENANCE' | 'CREATED';
+    userId?: string; // Who performed action or who it was assigned to
+    notes?: string;
+}
+
 export interface Asset {
   id: string;
   name: string;
@@ -173,6 +181,7 @@ export interface Asset {
   notes?: string;
   returnDate?: string;
   ownerId?: string;
+  logs?: AssetLog[]; // New History Log
 }
 
 export interface Client {
@@ -265,6 +274,12 @@ export interface SiteSection {
     };
 }
 
+export interface SiteSEO {
+    title: string;
+    description: string;
+    keywords: string[];
+}
+
 export interface SitePage {
     id: string;
     title: string;
@@ -277,6 +292,7 @@ export interface SitePage {
     showBookingWidget: boolean;
     gallery: SiteGalleryItem[];
     sections: SiteSection[];
+    seo?: SiteSEO; // Added Page-Level SEO
 }
 
 export interface SitePixels {
@@ -300,11 +316,7 @@ export interface SiteConfig {
     isPublished: boolean;
     instagramUrl?: string;
     gallery: SiteGalleryItem[];
-    seo: {
-        title: string;
-        description: string;
-        keywords: string[];
-    };
+    seo: SiteSEO; // Global Fallback
     pixels?: SitePixels;
     announcement?: {
         enabled: boolean;
@@ -465,6 +477,12 @@ export interface FinanceViewProps {
   config: StudioConfig;
   onAddAccount?: (account: Account) => void;
   onUpdateAccount?: (account: Account) => void;
+}
+
+export interface AnalyticsViewProps {
+  bookings: Booking[];
+  packages: Package[];
+  transactions: Transaction[];
 }
 
 export interface SettingsViewProps {

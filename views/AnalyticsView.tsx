@@ -2,16 +2,8 @@
 import React, { useMemo, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend, BarChart, Bar } from 'recharts';
-import { Booking, Package, Transaction, User } from '../types';
+import { Booking, Package, Transaction, User, AnalyticsViewProps } from '../types';
 import { TrendingUp, Clock, Target, CalendarCheck, DollarSign, TrendingDown, FileText, Printer, ArrowRight, Users, Briefcase, Percent } from 'lucide-react';
-
-const Motion = motion as any;
-
-interface AnalyticsViewProps {
-  bookings: Booking[];
-  packages: Package[];
-  transactions?: Transaction[];
-}
 
 const AnalyticsView: React.FC<AnalyticsViewProps> = ({ bookings, packages, transactions = [] }) => {
   const [viewMode, setViewMode] = useState<'DASHBOARD' | 'SHAREHOLDER'>('DASHBOARD');
@@ -62,24 +54,24 @@ const AnalyticsView: React.FC<AnalyticsViewProps> = ({ bookings, packages, trans
   
   // -- REAL TIME CALCULATIONS --
   
-  const bookingTrendsData = useMemo(() => {
+  // UPDATED: Use Transactions for Cash Flow Trend
+  const cashFlowTrendData = useMemo(() => {
       const data: any[] = [];
       const periodMap = new Map<string, number>();
       
-      filteredData.bookings.forEach(b => {
-          const date = new Date(b.date);
+      filteredData.transactions.forEach(t => {
+          if (t.type !== 'INCOME') return;
+          const date = new Date(t.date);
           const key = timeRange === 'MONTH' 
             ? `d${date.getDate()}` 
             : date.toLocaleString('default', { month: 'short' });
             
-          periodMap.set(key, (periodMap.get(key) || 0) + b.price);
+          periodMap.set(key, (periodMap.get(key) || 0) + t.amount);
       });
 
-      // Ensure data points
       if (periodMap.size === 0) {
            data.push({name: 'No Data', revenue: 0});
       } else {
-           // Sort keys if month (days)
            const sortedKeys = Array.from(periodMap.keys()).sort((a,b) => {
                if (a.startsWith('d')) return parseInt(a.substring(1)) - parseInt(b.substring(1));
                return 0;
@@ -183,7 +175,7 @@ const AnalyticsView: React.FC<AnalyticsViewProps> = ({ bookings, packages, trans
   };
 
   return (
-    <Motion.div 
+    <motion.div 
         initial={{ opacity: 0, y: 10 }} 
         animate={{ opacity: 1, y: 0 }} 
         className="space-y-8 h-full flex flex-col"
@@ -234,12 +226,12 @@ const AnalyticsView: React.FC<AnalyticsViewProps> = ({ bookings, packages, trans
 
        {/* ==================== DASHBOARD MODE ==================== */}
        {viewMode === 'DASHBOARD' && (
-           <Motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-8">
+           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-8">
                {/* KPIs */}
                <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                    <div className="p-6 bg-lumina-surface border border-lumina-highlight rounded-2xl">
                        <div className="flex justify-between items-start mb-2">
-                           <p className="text-xs font-bold text-lumina-muted uppercase">Revenue</p>
+                           <p className="text-xs font-bold text-lumina-muted uppercase">Revenue (Realized)</p>
                            <TrendingUp className="text-emerald-400 w-5 h-5" />
                        </div>
                        <p className="text-2xl font-bold text-white">Rp {(totalRevenue / 1000000).toFixed(1)}M</p>
@@ -272,10 +264,10 @@ const AnalyticsView: React.FC<AnalyticsViewProps> = ({ bookings, packages, trans
                {/* Charts Row 1 */}
                <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                    <div className="lg:col-span-2 bg-lumina-surface border border-lumina-highlight rounded-2xl p-6 flex flex-col">
-                       <h3 className="text-lg font-bold text-white mb-6">Revenue Trend</h3>
+                       <h3 className="text-lg font-bold text-white mb-6">Cash Flow Trend</h3>
                        <div className="flex-1 w-full min-h-[250px]">
                            <ResponsiveContainer width="100%" height="100%">
-                               <AreaChart data={bookingTrendsData}>
+                               <AreaChart data={cashFlowTrendData}>
                                    <defs>
                                        <linearGradient id="colorRevenue" x1="0" y1="0" x2="0" y2="1">
                                            <stop offset="5%" stopColor="#bef264" stopOpacity={0.3}/>
@@ -318,13 +310,12 @@ const AnalyticsView: React.FC<AnalyticsViewProps> = ({ bookings, packages, trans
                        </div>
                    </div>
                </div>
-           </Motion.div>
+           </motion.div>
        )}
 
        {/* ==================== SHAREHOLDER REPORT MODE ==================== */}
        {viewMode === 'SHAREHOLDER' && (
-           <Motion.div initial={{ opacity: 0, scale: 0.98 }} animate={{ opacity: 1, scale: 1 }} className="space-y-8 pb-20 print:pb-0 print:space-y-6">
-               
+           <motion.div initial={{ opacity: 0, scale: 0.98 }} animate={{ opacity: 1, scale: 1 }} className="space-y-8 pb-20 print:pb-0 print:space-y-6">
                {/* 1. EXECUTIVE SUMMARY */}
                <div className="grid grid-cols-1 md:grid-cols-4 gap-4 print:grid-cols-4">
                    <div className="bg-emerald-500/10 border border-emerald-500/30 p-6 rounded-xl print:border-black print:bg-white">
@@ -475,9 +466,9 @@ const AnalyticsView: React.FC<AnalyticsViewProps> = ({ bookings, packages, trans
                    </div>
                </div>
 
-           </Motion.div>
+           </motion.div>
        )}
-    </Motion.div>
+    </motion.div>
   );
 };
 

@@ -1,13 +1,11 @@
 
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Asset, AssetCategory, AssetStatus, InventoryViewProps } from '../types';
+import { Asset, AssetCategory, AssetStatus, InventoryViewProps, AssetLog } from '../types';
 import { Search, Plus } from 'lucide-react';
 import InventoryAssetCard from '../components/inventory/InventoryAssetCard';
 import InventoryActionModal from '../components/inventory/InventoryActionModal';
 import InventoryAddModal from '../components/inventory/InventoryAddModal';
-
-const Motion = motion as any;
 
 const InventoryView: React.FC<InventoryViewProps> = ({ assets, users, onAddAsset, onUpdateAsset, onDeleteAsset, config }) => {
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
@@ -33,6 +31,12 @@ const InventoryView: React.FC<InventoryViewProps> = ({ assets, users, onAddAsset
               category: newAsset.category as AssetCategory,
               status: (newAsset.status || 'AVAILABLE') as AssetStatus,
               serialNumber: newAsset.serialNumber || '',
+              logs: [{
+                  id: `l-${Date.now()}`,
+                  date: new Date().toISOString(),
+                  action: 'CREATED',
+                  notes: 'Asset registered in system'
+              }]
           });
           setIsAddModalOpen(false);
       }
@@ -42,12 +46,19 @@ const InventoryView: React.FC<InventoryViewProps> = ({ assets, users, onAddAsset
       setActiveMenu(null);
       if (type === 'RETURN') {
            if (onUpdateAsset) {
+               const log: AssetLog = {
+                   id: `l-${Date.now()}`,
+                   date: new Date().toISOString(),
+                   action: 'RETURN',
+                   notes: `Returned from ${users.find(u => u.id === asset.assignedToUserId)?.name || 'User'}`
+               };
                onUpdateAsset({
                    ...asset,
                    status: 'AVAILABLE',
                    assignedToUserId: undefined,
                    returnDate: undefined,
-                   notes: undefined
+                   notes: undefined,
+                   logs: [log, ...(asset.logs || [])]
                });
            }
       } else {
@@ -59,15 +70,28 @@ const InventoryView: React.FC<InventoryViewProps> = ({ assets, users, onAddAsset
   const handleActionConfirm = (asset: Asset, form: { userId: string, returnDate: string, notes: string }) => {
       if (onUpdateAsset) {
           let updatedAsset = { ...asset };
+          let log: AssetLog = {
+              id: `l-${Date.now()}`,
+              date: new Date().toISOString(),
+              action: actionType || 'MAINTENANCE',
+              notes: form.notes
+          };
           
           if (actionType === 'CHECK_OUT') {
               updatedAsset.status = 'IN_USE';
               updatedAsset.assignedToUserId = form.userId;
               updatedAsset.returnDate = form.returnDate;
+              log.action = 'CHECK_OUT';
+              log.userId = form.userId;
+              log.notes = `Checked out until ${form.returnDate}`;
           } else if (actionType === 'MAINTENANCE') {
               updatedAsset.status = 'MAINTENANCE'; 
               updatedAsset.notes = form.notes;
+              log.action = 'MAINTENANCE';
+              log.notes = form.notes;
           }
+
+          updatedAsset.logs = [log, ...(updatedAsset.logs || [])];
 
           onUpdateAsset(updatedAsset);
           setActionAsset(null);
@@ -131,7 +155,7 @@ const InventoryView: React.FC<InventoryViewProps> = ({ assets, users, onAddAsset
                  className={`px-6 py-3 font-bold text-sm transition-colors relative whitespace-nowrap ${activeCategory === cat.id ? 'text-white' : 'text-lumina-muted hover:text-white'}`}
               >
                   {cat.label}
-                  {activeCategory === cat.id && <Motion.div layoutId="invTab" className="absolute bottom-0 left-0 w-full h-0.5 bg-lumina-accent" />}
+                  {activeCategory === cat.id && <motion.div layoutId="invTab" className="absolute bottom-0 left-0 w-full h-0.5 bg-lumina-accent" />}
               </button>
           ))}
       </div>
