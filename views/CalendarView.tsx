@@ -2,6 +2,7 @@
 import React, { useEffect, useState } from 'react';
 import { Booking, CalendarViewProps } from '../types';
 import { ChevronLeft, ChevronRight, Plus, Calendar as CalendarIcon, List, Grid } from 'lucide-react';
+import { useStudio } from '../contexts/StudioContext';
 
 import MonthView from '../components/calendar/MonthView';
 import WeekView from '../components/calendar/WeekView';
@@ -10,9 +11,15 @@ import DayView from '../components/calendar/DayView';
 type ViewMode = 'DAY' | 'WEEK' | 'MONTH';
 
 const CalendarView: React.FC<CalendarViewProps> = ({ bookings, currentDate, users, rooms, onDateChange, onNewBooking, onSelectBooking, onUpdateBooking, googleToken }) => {
+  const { config } = useStudio();
   const [viewMode, setViewMode] = useState<ViewMode>('DAY');
   const [currentTimeOffset, setCurrentTimeOffset] = useState<number | null>(null);
   const [draggedBookingId, setDraggedBookingId] = useState<string | null>(null);
+
+  // Dynamic Start Hour from Config (e.g. "09:00" -> 9)
+  const startHour = parseInt(config.operatingHoursStart?.split(':')[0] || "9");
+  const endHour = parseInt(config.operatingHoursEnd?.split(':')[0] || "21");
+  const hourHeight = 80; // Standardized height
 
   // --- TIME LOGIC ---
   useEffect(() => {
@@ -24,8 +31,8 @@ const CalendarView: React.FC<CalendarViewProps> = ({ bookings, currentDate, user
          const currentHour = now.getHours();
          const currentMinutes = now.getMinutes();
          
-         if (currentHour >= 9 && currentHour < 20) {
-            const offset = (currentHour - 9) * 128 + (currentMinutes / 60) * 128;
+         if (currentHour >= startHour && currentHour < endHour) {
+            const offset = (currentHour - startHour) * hourHeight + (currentMinutes / 60) * hourHeight;
             setCurrentTimeOffset(offset);
          } else {
              setCurrentTimeOffset(null);
@@ -38,7 +45,7 @@ const CalendarView: React.FC<CalendarViewProps> = ({ bookings, currentDate, user
     updateTime();
     const interval = window.setInterval(updateTime, 60000); 
     return () => window.clearInterval(interval);
-  }, [currentDate]);
+  }, [currentDate, startHour, endHour]);
 
   // --- DRAG & DROP HANDLERS ---
   const handleDragStart = (e: React.DragEvent, bookingId: string) => {
@@ -160,6 +167,8 @@ const CalendarView: React.FC<CalendarViewProps> = ({ bookings, currentDate, user
               onDrop={handleDrop}
               draggedBookingId={draggedBookingId}
               currentTimeOffset={currentTimeOffset}
+              startHour={startHour}
+              hourHeight={hourHeight}
           />
       )}
       {viewMode === 'WEEK' && (

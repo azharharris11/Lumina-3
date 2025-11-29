@@ -58,24 +58,42 @@ const InvoiceModal: React.FC<InvoiceModalProps> = ({ isOpen, onClose, booking, c
       <style>
         {`
           @media print {
-            body * { visibility: hidden; }
-            #invoice-content, #invoice-content * { visibility: visible; }
+            body {
+                background-color: white !important;
+            }
+            body * { 
+                visibility: hidden; 
+            }
+            #invoice-content, #invoice-content * { 
+                visibility: visible; 
+            }
             #invoice-content {
                 position: absolute;
                 left: 0;
                 top: 0;
                 width: 100%;
                 margin: 0;
-                padding: 20px;
+                padding: 40px !important;
                 background-color: white !important;
                 color: black !important;
                 box-shadow: none !important;
                 border-radius: 0 !important;
                 overflow: visible !important;
+                border: none !important;
             }
-            .no-print { display: none !important; }
-            .print-black { color: #000 !important; }
-            .print-border { border-color: #000 !important; }
+            .no-print { 
+                display: none !important; 
+            }
+            /* Force High Contrast for Print */
+            .print-black { color: #000000 !important; }
+            .print-border { border-color: #000000 !important; }
+            .print-bg-white { background-color: #ffffff !important; }
+            
+            /* Remove shadows and rounded corners for crisp print */
+            * {
+                box-shadow: none !important;
+                text-shadow: none !important;
+            }
           }
         `}
       </style>
@@ -86,7 +104,7 @@ const InvoiceModal: React.FC<InvoiceModalProps> = ({ isOpen, onClose, booking, c
         initial={{ scale: 0.95, opacity: 0 }}
         animate={{ scale: 1, opacity: 1 }}
         exit={{ scale: 0.95, opacity: 0 }}
-        className="relative w-full max-w-3xl h-[85vh] flex flex-col print:h-auto print:shadow-none print:w-full"
+        className="relative w-full max-w-3xl h-[85vh] flex flex-col print:h-auto print:w-full print:shadow-none print:m-0"
       >
         <div className="flex justify-between items-center mb-4 text-white no-print">
             <h2 className="text-xl font-bold font-display">Invoice Preview</h2>
@@ -100,7 +118,7 @@ const InvoiceModal: React.FC<InvoiceModalProps> = ({ isOpen, onClose, booking, c
             </div>
         </div>
 
-        <div id="invoice-content" className="flex-1 bg-white text-stone-900 rounded-lg shadow-2xl overflow-y-auto custom-scrollbar relative font-sans">
+        <div id="invoice-content" className="flex-1 bg-white text-stone-900 rounded-lg shadow-2xl overflow-y-auto custom-scrollbar relative font-sans print-bg-white">
             <div className="p-12 min-h-full flex flex-col justify-between">
                 
                 <div>
@@ -110,9 +128,9 @@ const InvoiceModal: React.FC<InvoiceModalProps> = ({ isOpen, onClose, booking, c
                                 {config.logoUrl ? (
                                     <img src={config.logoUrl} alt="Logo" className="h-10 w-auto" />
                                 ) : (
-                                    <Aperture className="w-8 h-8" />
+                                    <Aperture className="w-8 h-8 print-black" />
                                 )}
-                                <span className="font-display font-bold text-2xl tracking-tight uppercase">{config.name}</span>
+                                <span className="font-display font-bold text-2xl tracking-tight uppercase print-black">{config.name}</span>
                             </div>
                             <div className="text-sm text-stone-600 space-y-1 print-black">
                                 <p>{config.address}</p>
@@ -122,7 +140,7 @@ const InvoiceModal: React.FC<InvoiceModalProps> = ({ isOpen, onClose, booking, c
                             </div>
                         </div>
                         <div className="text-right">
-                            <h1 className="text-5xl font-display font-bold text-stone-200 mb-2 print-black">INVOICE</h1>
+                            <h1 className="text-5xl font-display font-bold text-stone-200 mb-2 print-black" style={{ color: '#e5e5e5' }}>INVOICE</h1>
                             <p className="text-stone-500 font-mono font-bold tracking-widest print-black">{generateInvoiceId()}</p>
                             <p className="text-sm font-bold text-stone-900 mt-2 print-black">Date: {invoiceDate}</p>
                         </div>
@@ -191,7 +209,7 @@ const InvoiceModal: React.FC<InvoiceModalProps> = ({ isOpen, onClose, booking, c
                                 <span>Amount Paid</span>
                                 <span className="font-mono">- Rp {booking.paidAmount.toLocaleString('id-ID')}</span>
                             </div>
-                            <div className="bg-stone-900 text-white p-3 rounded-lg flex justify-between font-bold text-xl mt-4 print-border" style={{backgroundColor: '#000', color: '#fff'}}>
+                            <div className="bg-stone-900 text-white p-3 rounded-lg flex justify-between font-bold text-xl mt-4 print-border print-black print-bg-white" style={{border: '2px solid black'}}>
                                 <span>Balance Due</span>
                                 <span className="font-mono">Rp {balanceDue.toLocaleString('id-ID')}</span>
                             </div>

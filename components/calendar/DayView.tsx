@@ -14,12 +14,14 @@ interface DayViewProps {
     onDrop: (e: React.DragEvent, target: { date: string, time: string, studio: string }) => void;
     draggedBookingId: string | null;
     currentTimeOffset: number | null;
+    startHour: number;
+    hourHeight: number;
 }
 
-const DayView: React.FC<DayViewProps> = ({ currentDate, bookings, rooms, users, onNewBooking, onSelectBooking, onDragStart, onDragOver, onDrop, draggedBookingId, currentTimeOffset }) => {
-    const hours = Array.from({ length: 11 }, (_, i) => i + 9);
+const DayView: React.FC<DayViewProps> = ({ currentDate, bookings, rooms, users, onNewBooking, onSelectBooking, onDragStart, onDragOver, onDrop, draggedBookingId, currentTimeOffset, startHour, hourHeight }) => {
+    // Generate hours dynamically based on startHour (e.g., if startHour is 7, show 7, 8, 9...)
+    const hours = Array.from({ length: 14 }, (_, i) => i + startHour);
     const todaysBookings = bookings.filter(b => b.date === currentDate && b.status !== 'CANCELLED');
-    const HOUR_HEIGHT = 80; // Reduced from 128px for better density
 
     const getPhotographerAvatar = (id: string) => {
         return users.find(u => u.id === id)?.avatar || `https://ui-avatars.com/api/?name=${id}`;
@@ -41,7 +43,7 @@ const DayView: React.FC<DayViewProps> = ({ currentDate, bookings, rooms, users, 
           {currentTimeOffset !== null && (
               <div 
                   className="absolute left-0 right-0 h-[2px] bg-red-500 z-30 pointer-events-none flex items-center"
-                  style={{ top: `${(currentTimeOffset / 128) * HOUR_HEIGHT}px` }} 
+                  style={{ top: `${currentTimeOffset}px` }} 
               >
                   <div className="w-16 bg-red-500 text-white text-[9px] font-bold px-1 py-0.5 text-right pr-2 sticky left-0">
                       NOW
@@ -52,7 +54,7 @@ const DayView: React.FC<DayViewProps> = ({ currentDate, bookings, rooms, users, 
 
           <div className="absolute left-0 top-0 bottom-0 w-16 border-r border-lumina-highlight/30 bg-lumina-base/50 z-10 sticky">
               {hours.map(hour => (
-                  <div key={hour} style={{ height: `${HOUR_HEIGHT}px` }} className="border-b border-lumina-highlight/30 flex items-start justify-center pt-2">
+                  <div key={hour} style={{ height: `${hourHeight}px` }} className="border-b border-lumina-highlight/30 flex items-start justify-center pt-2">
                   <span className="text-[10px] font-mono text-lumina-muted">{hour}:00</span>
                   </div>
               ))}
@@ -63,14 +65,14 @@ const DayView: React.FC<DayViewProps> = ({ currentDate, bookings, rooms, users, 
               const studioBookings = todaysBookings.filter(b => b.studio === room.name);
               
               return (
-                  <div key={room.id} className="flex-1 relative border-r border-lumina-highlight/30 last:border-r-0 min-w-[150px]" style={{ height: `${hours.length * HOUR_HEIGHT}px` }}> 
+                  <div key={room.id} className="flex-1 relative border-r border-lumina-highlight/30 last:border-r-0 min-w-[150px]" style={{ height: `${hours.length * hourHeight}px` }}> 
                       {hours.map(hour => (
                           <div 
                               key={`slot-${room.id}-${hour}`}
                               onDragOver={onDragOver}
                               onDrop={(e) => onDrop(e, { date: currentDate, time: `${hour}:00`, studio: room.name })}
                               onClick={() => onNewBooking({ date: currentDate, time: `${hour}:00`, studio: room.name })}
-                              style={{ height: `${HOUR_HEIGHT}px` }}
+                              style={{ height: `${hourHeight}px` }}
                               className="border-b border-lumina-highlight/20 hover:bg-white/5 transition-colors cursor-pointer group"
                           >
                               <div className="hidden group-hover:flex h-full items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
@@ -83,11 +85,12 @@ const DayView: React.FC<DayViewProps> = ({ currentDate, bookings, rooms, users, 
 
                       {studioBookings.map(booking => {
                       if (!booking.timeStart) return null;
-                      const startHour = parseInt(booking.timeStart.split(':')[0]);
-                      const startMinute = parseInt(booking.timeStart.split(':')[1]);
+                      const bookStartHour = parseInt(booking.timeStart.split(':')[0]);
+                      const bookStartMinute = parseInt(booking.timeStart.split(':')[1]);
                       
-                      const topOffset = (startHour - 9) * HOUR_HEIGHT + (startMinute/60) * HOUR_HEIGHT; 
-                      const height = booking.duration * HOUR_HEIGHT;
+                      // Calculate offset relative to startHour
+                      const topOffset = (bookStartHour - startHour) * hourHeight + (bookStartMinute/60) * hourHeight; 
+                      const height = booking.duration * hourHeight;
                       const isSmall = height < 40; 
                       
                       return (

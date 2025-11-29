@@ -24,11 +24,11 @@ import ProjectDrawer from './components/ProjectDrawer';
 import CommandPalette from './components/CommandPalette';
 import GlobalNotifications from './components/GlobalNotifications';
 import { DashboardSkeleton } from './components/ui/Skeleton';
-import { Booking, ActivityLog, Role, User } from './types';
+import { Booking, Role } from './types';
 import { ShieldAlert } from 'lucide-react';
 import { useAuth } from './contexts/AuthContext';
 import { useStudio } from './contexts/StudioContext';
-import { doc, getDoc, collection, query, onSnapshot, setDoc, deleteDoc } from 'firebase/firestore'; 
+import { doc, getDoc, setDoc, deleteDoc } from 'firebase/firestore'; 
 import { db } from './firebase';
 
 const VIEW_PERMISSIONS: Record<string, Role[]> = {
@@ -62,14 +62,14 @@ const App: React.FC = () => {
       addAsset, updateAsset, deleteAsset,
       addTransaction, deleteTransaction, settleBooking, transferFunds,
       completeOnboarding,
-      addNotification, dismissNotification 
+      dismissNotification 
   } = useStudio();
 
   const [isDarkMode, setIsDarkMode] = useState(true);
   const [currentView, setCurrentView] = useState('dashboard');
   const [viewMode, setViewMode] = useState<'OS' | 'SITE' | 'LAUNCHER' | 'PUBLIC'>('LAUNCHER'); 
   
-  // UI State (Keep Local)
+  // UI State
   const [isMobile, setIsMobile] = useState(window.innerWidth < 1024);
   const [isNewBookingModalOpen, setIsNewBookingModalOpen] = useState(false);
   const [isProjectDrawerOpen, setIsProjectDrawerOpen] = useState(false);
@@ -135,7 +135,6 @@ const App: React.FC = () => {
   if (authLoading || (currentUser && loadingData)) return <DashboardSkeleton />;
 
   if (viewMode === 'PUBLIC') {
-      // Public view uses its own local state or fetched public config, decoupled from main app context
       return <PublicSiteView config={publicConfig} packages={packages} users={[]} bookings={bookings} portalBooking={portalBooking} isLoading={isPublicLoading} error={null} onBooking={(data) => { console.log("Public Booking:", data); alert("Booking submitted!"); }} />;
   }
 
@@ -156,7 +155,7 @@ const App: React.FC = () => {
   const renderView = () => {
       if (!VIEW_PERMISSIONS[currentView]?.includes(currentUser.role)) return <AccessDenied />;
       
-      const usersList = [currentUser]; // Replace with real users fetch from context if implemented
+      const usersList = [currentUser]; 
 
       switch (currentView) {
           case 'dashboard': return <DashboardView user={currentUser} bookings={bookings} transactions={transactions} onSelectBooking={(id) => { setSelectedBookingId(id); setIsProjectDrawerOpen(true); }} selectedDate={new Date().toISOString().split('T')[0]} onNavigate={setCurrentView} config={config} />;
@@ -187,7 +186,6 @@ const App: React.FC = () => {
           {isMobile && <MobileNav currentUser={currentUser} onNavigate={setCurrentView} currentView={currentView} onLogout={logout} bookings={bookings} />}
       </main>
       
-      {/* Modals are now lighter as they consume props or context */}
       <AnimatePresence>{isNewBookingModalOpen && <NewBookingModal isOpen={isNewBookingModalOpen} onClose={() => { setIsNewBookingModalOpen(false); setBookingPrefill(undefined); }} photographers={[currentUser]} accounts={accounts} bookings={bookings} clients={clients} assets={assets} config={config} onAddBooking={addBooking} onAddClient={addClient} initialData={bookingPrefill} googleToken={googleToken} packages={packages} />}</AnimatePresence>
       
       <AnimatePresence>
@@ -196,26 +194,9 @@ const App: React.FC = () => {
                   isOpen={isProjectDrawerOpen} 
                   onClose={() => { setIsProjectDrawerOpen(false); setSelectedBookingId(null); }} 
                   booking={bookings.find(b => b.id === selectedBookingId) || null} 
-                  photographer={currentUser} 
                   onUpdateBooking={updateBooking} 
-                  onDeleteBooking={deleteBooking} 
-                  bookings={bookings} 
-                  config={config} 
-                  packages={packages} 
-                  currentUser={currentUser} 
-                  assets={assets} 
-                  users={[currentUser]} 
-                  transactions={transactions} 
-                  onAddTransaction={addTransaction} 
-                  accounts={accounts} 
+                  onDeleteBooking={deleteBooking}
                   googleToken={googleToken} 
-                  onLogActivity={(bid, action, details) => { 
-                      const b = bookings.find(x => x.id === bid); 
-                      if(b) { 
-                          const newLog: ActivityLog = { id: `l-${Date.now()}`, timestamp: new Date().toISOString(), action, details, userId: currentUser.id, userName: currentUser.name }; 
-                          updateBooking({ ...b, logs: [newLog, ...(b.logs || [])] }); 
-                      } 
-                  }} 
               />
           )}
       </AnimatePresence>

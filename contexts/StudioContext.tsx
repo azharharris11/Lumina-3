@@ -23,6 +23,7 @@ interface StudioContextType {
   notifications: Notification[];
   metrics: MonthlyMetric[];
   loadingData: boolean;
+  users: any[]; // Add users to context
   
   // Actions
   updateConfig: (newConfig: StudioConfig) => Promise<void>;
@@ -60,6 +61,7 @@ export const StudioProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [metrics, setMetrics] = useState<MonthlyMetric[]>([]);
+  const [users, setUsers] = useState<any[]>([]); // New Users State
   const [loadingData, setLoadingData] = useState(true);
 
   // Notification Helper
@@ -94,6 +96,10 @@ export const StudioProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     // Config
     const configRef = doc(db, "studios", ownerId);
     const unsubConfig = onSnapshot(configRef, (doc) => { if (doc.exists()) setConfig(doc.data() as StudioConfig); });
+
+    // Users (Team) - Fetching all users for simplicity (security rules apply in real app)
+    const qUsers = query(collection(db, "users"));
+    const unsubUsers = onSnapshot(qUsers, (snap) => setUsers(snap.docs.map(d => d.data())));
 
     // Date Range for Bookings
     const today = new Date();
@@ -139,6 +145,7 @@ export const StudioProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         unsubAccounts();
         unsubPackages();
         unsubTransactions();
+        unsubUsers();
     };
   }, [currentUser]);
 
@@ -155,7 +162,6 @@ export const StudioProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       if (!currentUser) return false;
       const ownerId = currentUser.id;
       
-      // 1. Fetch latest bookings for this specific date
       const q = query(
           collection(db, "bookings"),
           where("ownerId", "==", ownerId),
@@ -165,7 +171,6 @@ export const StudioProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       const snapshot = await getDocs(q);
       const dayBookings = snapshot.docs.map(d => d.data() as Booking);
       
-      // 2. Perform Conflict Logic (Same as frontend, but on fresh data)
       const bufferMins = config.bufferMinutes || 0;
       const [newStartH, newStartM] = newBooking.timeStart.split(':').map(Number);
       const newStartMins = newStartH * 60 + newStartM;
@@ -184,7 +189,6 @@ export const StudioProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       if (roomConflict) throw new Error(`Conflict detected! Room occupied by ${roomConflict.clientName}.`);
   };
 
-  // ATOMIC ADD BOOKING WITH PRE-FLIGHT CHECK
   const addBooking = async (newBooking: Booking, paymentDetails?: { amount: number, accountId: string }) => {
       if (!currentUser) return;
       const ownerId = currentUser.id;
@@ -197,10 +201,8 @@ export const StudioProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       };
 
       try {
-          // STEP 1: Pre-flight Race Condition Check
           await checkConflictOnServer(bookingWithAuth);
 
-          // STEP 2: Transactional Write
           if (paymentDetails && paymentDetails.amount > 0) {
               await runTransaction(db, async (transaction) => {
                   const bookingRef = doc(db, "bookings", newBooking.id);
@@ -212,10 +214,8 @@ export const StudioProvider: React.FC<{ children: React.ReactNode }> = ({ childr
 
                   const newBalance = (accountDoc.data().balance || 0) + paymentDetails.amount;
 
-                  // 1. Create Booking
                   transaction.set(bookingRef, bookingWithAuth);
 
-                  // 2. Create Transaction Record
                   const newTransaction: Transaction = { 
                       id: transactionRef.id, 
                       date: new Date().toISOString(), 
@@ -229,18 +229,14 @@ export const StudioProvider: React.FC<{ children: React.ReactNode }> = ({ childr
                       ownerId: ownerId 
                   };
                   transaction.set(transactionRef, newTransaction);
-
-                  // 3. Update Account Balance
                   transaction.update(accountRef, { balance: newBalance });
               });
           } else {
-              // No payment, simple write
               await setDoc(doc(db, "bookings", newBooking.id), bookingWithAuth);
           }
           addNotification({ type: 'SUCCESS', title: 'Booking Created', message: `${newBooking.clientName} scheduled.` });
       } catch (e: any) {
           console.error("Add Booking Failed:", e);
-          // Re-throw to let UI handle the error message
           throw e; 
       }
   };
@@ -250,7 +246,25 @@ export const StudioProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   };
 
   const deleteBooking = async (id: string) => {
-      await deleteDoc(doc(db, "bookings", id));
+      try {
+          // Cascade delete transactions linked to this booking
+          // Note: In a real app, this should reverse the balance effect on accounts too. 
+          // For simplicity here, we just remove the transaction records to keep ledger clean.
+          const relatedTransactions = transactions.filter(t => t.bookingId === id);
+          const batch = writeBatch(db);
+          
+          relatedTransactions.forEach(t => {
+              batch.delete(doc(db, "transactions", t.id));
+          });
+          
+          batch.delete(doc(db, "bookings", id));
+          await batch.commit();
+          
+          addNotification({ type: 'SUCCESS', title: 'Deleted', message: 'Booking and related records removed.' });
+      } catch (e) {
+          console.error("Delete failed", e);
+          addNotification({ type: 'ERROR', title: 'Error', message: 'Failed to delete booking.' });
+      }
   };
 
   const addClient = async (client: Client) => {
@@ -326,7 +340,6 @@ export const StudioProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       await deleteDoc(doc(db, "transactions", id));
   };
 
-  // ATOMIC SETTLE BOOKING
   const settleBooking = async (bookingId: string, amount: number, accountId: string) => {
       if (!currentUser) return;
 
@@ -345,13 +358,9 @@ export const StudioProvider: React.FC<{ children: React.ReactNode }> = ({ childr
               const bookingData = bookingDoc.data() as Booking;
               const accountData = accountDoc.data() as Account;
 
-              // 1. Update Booking Paid Amount
               transaction.update(bookingRef, { paidAmount: (bookingData.paidAmount || 0) + amount });
-
-              // 2. Update Account Balance
               transaction.update(accountRef, { balance: (accountData.balance || 0) + amount });
 
-              // 3. Create Transaction Record
               const newTrans: Transaction = { 
                   id: transactionRef.id, 
                   date: new Date().toISOString(), 
@@ -376,7 +385,6 @@ export const StudioProvider: React.FC<{ children: React.ReactNode }> = ({ childr
 
   const transferFunds = async (fromId: string, toId: string, amount: number) => {
       if(!currentUser) return;
-      
       try {
           await runTransaction(db, async (transaction) => {
               const fromRef = doc(db, "accounts", fromId);
@@ -444,7 +452,7 @@ export const StudioProvider: React.FC<{ children: React.ReactNode }> = ({ childr
 
   return (
     <StudioContext.Provider value={{
-        config, bookings, assets, clients, accounts, packages, transactions, notifications, metrics, loadingData,
+        config, bookings, assets, clients, accounts, packages, transactions, notifications, metrics, loadingData, users,
         updateConfig, addBooking, updateBooking, deleteBooking,
         addClient, updateClient, deleteClient,
         addAsset, updateAsset, deleteAsset,
