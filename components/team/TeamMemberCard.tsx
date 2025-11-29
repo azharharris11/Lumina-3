@@ -1,8 +1,8 @@
 
 import React from 'react';
 import { motion } from 'framer-motion';
-import { User, Booking } from '../../types';
-import { Edit2, Trash2, Award, Mail, Phone, Calendar, TrendingUp, Coins } from 'lucide-react';
+import { User, Booking, Transaction } from '../../types';
+import { Edit2, Trash2, Award, Mail, Phone, Calendar, TrendingUp, Coins, DollarSign } from 'lucide-react';
 
 const Motion = motion as any;
 
@@ -10,6 +10,7 @@ interface TeamMemberCardProps {
     user: User;
     index: number;
     bookings: Booking[];
+    transactions?: Transaction[];
     onEdit: (user: User) => void;
     onDelete: (user: User) => void;
     onViewSchedule: (user: User) => void;
@@ -19,10 +20,19 @@ interface TeamMemberCardProps {
     getEstimatedCommission: (user: User) => number;
 }
 
-const TeamMemberCard: React.FC<TeamMemberCardProps> = ({ user, index, bookings, onEdit, onDelete, onViewSchedule, onManageAvailability, onPayout, getRevenueGenerated, getEstimatedCommission }) => {
+const TeamMemberCard: React.FC<TeamMemberCardProps> = ({ user, index, bookings, transactions = [], onEdit, onDelete, onViewSchedule, onManageAvailability, onPayout, getRevenueGenerated, getEstimatedCommission }) => {
     
     const getActiveJobs = (userId: string) => bookings.filter(b => (b.photographerId === userId || b.editorId === userId) && b.status !== 'COMPLETED').length;
     const getCompletedJobs = (userId: string) => bookings.filter(b => (b.photographerId === userId || b.editorId === userId) && b.status === 'COMPLETED').length;
+
+    // Calculate Financials Ledger
+    const totalCommissionEarned = getEstimatedCommission(user);
+    
+    const totalCommissionPaid = transactions
+        .filter(t => t.type === 'EXPENSE' && t.recipientId === user.id)
+        .reduce((sum, t) => sum + t.amount, 0);
+
+    const outstandingBalance = Math.max(0, totalCommissionEarned - totalCommissionPaid);
 
     return (
         <Motion.div
@@ -82,33 +92,42 @@ const TeamMemberCard: React.FC<TeamMemberCardProps> = ({ user, index, bookings, 
 
             {/* Revenue/Commission Insight */}
             {user.role !== 'OWNER' && (
-                <div className="px-6 py-3 bg-gradient-to-r from-lumina-highlight/20 to-transparent border-t border-lumina-highlight/50 space-y-2">
+                <div className="px-6 py-3 bg-gradient-to-r from-lumina-highlight/20 to-transparent border-t border-lumina-highlight/50 space-y-3">
                         <div className="flex items-center justify-between">
                             <div className="flex items-center gap-2 text-xs text-lumina-muted">
                                 <TrendingUp size={12} className="text-emerald-400" />
-                                <span>Net Sales (Profit)</span>
+                                <span>Net Sales</span>
                             </div>
                             <span className="text-sm font-mono font-bold text-emerald-400">
                                 Rp {getRevenueGenerated(user).toLocaleString('id-ID', { notation: "compact" })}
                             </span>
                         </div>
-                        <div className="flex items-center justify-between">
-                            <div className="flex items-center gap-2 text-xs text-lumina-muted">
-                                <Coins size={12} className="text-amber-400" />
-                                <span>Est. Commission ({user.commissionRate}%)</span>
-                            </div>
-                            <div className="flex items-center gap-2">
-                                <span className="text-sm font-mono font-bold text-amber-400">
-                                    Rp {getEstimatedCommission(user).toLocaleString('id-ID', { notation: "compact" })}
+                        
+                        <div className="border-t border-lumina-highlight/30 pt-2">
+                            <div className="flex justify-between items-center mb-1">
+                                <span className="text-xs text-lumina-muted flex items-center gap-1">
+                                    <Coins size={12} /> Outstanding Commission
                                 </span>
-                                <button 
-                                onClick={() => onPayout(user, getEstimatedCommission(user))}
-                                className="px-2 py-0.5 text-[9px] font-bold bg-emerald-500/20 text-emerald-400 border border-emerald-500/50 rounded hover:bg-emerald-500 hover:text-black transition-colors"
-                                title="Record Payout as Expense"
-                                >
-                                    PAYOUT
-                                </button>
+                                <span className={`text-sm font-mono font-bold ${outstandingBalance > 0 ? 'text-amber-400' : 'text-lumina-muted'}`}>
+                                    Rp {outstandingBalance.toLocaleString('id-ID', { notation: "compact" })}
+                                </span>
                             </div>
+                            <div className="flex justify-between items-center text-[10px] text-lumina-muted/50 mb-2">
+                                <span>Lifetime Earned: {totalCommissionEarned.toLocaleString('id-ID', {notation: "compact"})}</span>
+                                <span>Paid: {totalCommissionPaid.toLocaleString('id-ID', {notation: "compact"})}</span>
+                            </div>
+                            
+                            <button 
+                                onClick={() => onPayout(user, outstandingBalance)}
+                                disabled={outstandingBalance <= 0}
+                                className={`w-full py-1.5 text-xs font-bold rounded flex items-center justify-center gap-2 transition-colors
+                                    ${outstandingBalance > 0 
+                                        ? 'bg-emerald-500 hover:bg-emerald-600 text-white shadow-lg shadow-emerald-500/20' 
+                                        : 'bg-lumina-base border border-lumina-highlight text-lumina-muted cursor-not-allowed opacity-50'}
+                                `}
+                            >
+                                <DollarSign size={12}/> {outstandingBalance > 0 ? 'PAYOUT NOW' : 'SETTLED'}
+                            </button>
                         </div>
                 </div>
             )}

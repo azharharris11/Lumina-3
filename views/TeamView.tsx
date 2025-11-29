@@ -6,8 +6,12 @@ import { Plus, X } from 'lucide-react';
 import TeamMemberCard from '../components/team/TeamMemberCard';
 import TeamMemberModal from '../components/team/TeamMemberModal';
 import TeamAvailabilityModal from '../components/team/TeamAvailabilityModal';
+import ConfirmationModal from '../components/ui/ConfirmationModal';
+import { useStudio } from '../contexts/StudioContext'; // Use hook directly for cleaner prop drilling if preferred, but prop is cleaner for structure
 
 const TeamView: React.FC<TeamViewProps> = ({ users, bookings, onAddUser, onUpdateUser, onDeleteUser, onRecordExpense }) => {
+  const { transactions } = useStudio(); // Access transactions here
+  
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editMode, setEditMode] = useState(false);
   const [viewScheduleUser, setViewScheduleUser] = useState<User | null>(null);
@@ -17,10 +21,19 @@ const TeamView: React.FC<TeamViewProps> = ({ users, bookings, onAddUser, onUpdat
   const [isAvailabilityModalOpen, setIsAvailabilityModalOpen] = useState(false);
   const [selectedStaffForAvailability, setSelectedStaffForAvailability] = useState<User | null>(null);
 
+  // Confirmation State
+  const [confirmState, setConfirmState] = useState<{ isOpen: boolean, title: string, message: string, onConfirm: () => void, isDanger?: boolean }>({
+      isOpen: false, title: '', message: '', onConfirm: () => {}, isDanger: false
+  });
+
+  const closeConfirm = () => setConfirmState(prev => ({ ...prev, isOpen: false }));
+
   const getUserSchedule = (userId: string) => {
       return bookings.filter(b => (b.photographerId === userId || b.editorId === userId) && b.status !== 'COMPLETED' && b.status !== 'CANCELLED');
   }
 
+  // NOTE: These helper functions calculate RAW earned data.
+  // The actual "Paid vs Owed" logic is moved to TeamMemberCard for better encapsulation with transactions
   const getRevenueGenerated = (user: User) => {
       const completedBookings = bookings.filter(b => 
           (b.photographerId === user.id || b.editorId === user.id) && 
@@ -48,21 +61,35 @@ const TeamView: React.FC<TeamViewProps> = ({ users, bookings, onAddUser, onUpdat
 
   const handlePayout = (user: User, amount: number) => {
       if (amount <= 0) {
-          alert("No estimated commission to pay out.");
+          setConfirmState({
+              isOpen: true,
+              title: "No Outstanding Commission",
+              message: `${user.name} has no commission pending payout.`,
+              onConfirm: closeConfirm,
+              isDanger: false
+          });
           return;
       }
-      if (window.confirm(`Process payout of Rp ${amount.toLocaleString()} for ${user.name}?\n\nThis will record an expense in Finance.`)) {
-          if (onRecordExpense) {
-              onRecordExpense({
-                  description: `Commission Payout - ${user.name}`,
-                  amount: amount,
-                  category: 'Staff Salaries',
-                  accountId: 'acc1', // Default, logic for account selection can be added
-                  submittedBy: 'admin'
-              });
-              alert("Payout recorded as an expense.");
-          }
-      }
+      
+      setConfirmState({
+          isOpen: true,
+          title: "Confirm Payout",
+          message: `Process payout of Rp ${amount.toLocaleString()} for ${user.name}? This will record an expense and deduct from their outstanding balance.`,
+          onConfirm: () => {
+              if (onRecordExpense) {
+                  onRecordExpense({
+                      description: `Commission Payout - ${user.name}`,
+                      amount: amount,
+                      category: 'Staff Salaries',
+                      accountId: 'acc1', // Default, should ideally ask user
+                      submittedBy: 'admin',
+                      recipientId: user.id // CRITICAL: Link expense to user
+                  });
+              }
+              closeConfirm();
+          },
+          isDanger: false
+      });
   };
 
   const openAddModal = () => {
@@ -106,13 +133,26 @@ const TeamView: React.FC<TeamViewProps> = ({ users, bookings, onAddUser, onUpdat
       );
 
       if (hasActiveBookings) {
-          alert(`CANNOT DELETE STAFF '${user.name}'.\n\nReason: This user has active or future bookings assigned.\n\nSolution: Reassign their bookings to another staff member first, or mark the bookings as Completed/Cancelled.`);
+          setConfirmState({
+              isOpen: true,
+              title: "Cannot Delete Staff",
+              message: `User '${user.name}' has active bookings assigned. Please reassign their bookings or mark them as Completed/Cancelled first.`,
+              onConfirm: closeConfirm,
+              isDanger: true
+          });
           return;
       }
 
-      if (onDeleteUser && window.confirm(`Are you sure you want to remove ${user.name}? This action cannot be undone.`)) {
-          onDeleteUser(user.id);
-      }
+      setConfirmState({
+          isOpen: true,
+          title: "Delete Staff Member?",
+          message: `Are you sure you want to permanently remove ${user.name}? This action cannot be undone.`,
+          isDanger: true,
+          onConfirm: () => {
+              if (onDeleteUser) onDeleteUser(user.id);
+              closeConfirm();
+          }
+      });
   }
 
   return (
@@ -120,7 +160,7 @@ const TeamView: React.FC<TeamViewProps> = ({ users, bookings, onAddUser, onUpdat
       <div className="flex flex-col md:flex-row justify-between items-end">
         <div>
           <h1 className="text-4xl font-display font-bold text-white mb-2">Team Management</h1>
-          <p className="text-lumina-muted">Manage staff profiles, contact info, and operational status.</p>
+          <p className="text-lumina-muted">Manage staff profiles, commissions, and schedules.</p>
         </div>
         <div className="flex gap-4">
             <div className="px-4 py-2 bg-lumina-surface border border-lumina-highlight rounded-xl flex items-center gap-2">
@@ -140,6 +180,7 @@ const TeamView: React.FC<TeamViewProps> = ({ users, bookings, onAddUser, onUpdat
                 user={user}
                 index={index}
                 bookings={bookings}
+                transactions={transactions}
                 onEdit={openEditModal}
                 onDelete={handleDelete}
                 onViewSchedule={setViewScheduleUser}
@@ -150,6 +191,15 @@ const TeamView: React.FC<TeamViewProps> = ({ users, bookings, onAddUser, onUpdat
             />
         ))}
       </div>
+
+      <ConfirmationModal 
+          isOpen={confirmState.isOpen}
+          title={confirmState.title}
+          message={confirmState.message}
+          onConfirm={confirmState.onConfirm}
+          onCancel={closeConfirm}
+          isDanger={confirmState.isDanger}
+      />
 
       <AnimatePresence>
           {isModalOpen && (

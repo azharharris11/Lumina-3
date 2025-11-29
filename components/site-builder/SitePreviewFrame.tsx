@@ -16,14 +16,35 @@ const SitePreviewFrame: React.FC<SitePreviewFrameProps> = ({ children, className
 
     const doc = contentRef.contentWindow.document;
     
-    // Performance Fix: Clone Parent Styles directly instead of fetching CDN
-    // This prevents Flash of Unstyled Content (FOUC) and works offline
-    const parentHeadHtml = window.document.head.innerHTML;
+    // CLEAN INJECTION: Only copy essential styles, not the entire app head
+    // This prevents conflicting React scripts and unnecessary overhead
     
-    // Clone all style/script tags from parent to iframe
-    doc.head.innerHTML = parentHeadHtml;
+    // 1. Clear existing head (if any from previous renders)
+    doc.head.innerHTML = '';
 
-    // Additional Basic Reset for Iframe Context
+    // 2. Inject Tailwind CDN (matches index.html)
+    const tailwindScript = doc.createElement('script');
+    tailwindScript.src = "https://cdn.tailwindcss.com";
+    doc.head.appendChild(tailwindScript);
+
+    // 3. Inject Google Fonts (matches index.html)
+    const fontPreconnect1 = doc.createElement('link');
+    fontPreconnect1.rel = 'preconnect';
+    fontPreconnect1.href = 'https://fonts.googleapis.com';
+    doc.head.appendChild(fontPreconnect1);
+
+    const fontPreconnect2 = doc.createElement('link');
+    fontPreconnect2.rel = 'preconnect';
+    fontPreconnect2.href = 'https://fonts.gstatic.com';
+    fontPreconnect2.crossOrigin = 'anonymous';
+    doc.head.appendChild(fontPreconnect2);
+
+    const fontLink = doc.createElement('link');
+    fontLink.rel = 'stylesheet';
+    fontLink.href = 'https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=Syne:wght@400;600;700;800&family=Playfair+Display:ital,wght@0,400;0,700;1,400&display=swap';
+    doc.head.appendChild(fontLink);
+
+    // 4. Basic Reset for Iframe Context
     const style = doc.createElement('style');
     style.innerHTML = `
       body { margin: 0; overflow-x: hidden; background-color: #fff; }

@@ -49,6 +49,7 @@ export interface Transaction {
   isRecurring?: boolean;
   submittedBy?: string;
   ownerId?: string;
+  recipientId?: string; // New field to track who received the payment (for staff commission)
 }
 
 export interface BookingItem {
@@ -439,10 +440,11 @@ export interface CalendarViewProps {
 export interface TeamViewProps {
   users: User[];
   bookings: Booking[];
+  transactions?: Transaction[]; // Added transactions prop
   onAddUser: (user: User) => void;
   onUpdateUser: (user: User) => void;
   onDeleteUser: (id: string) => void;
-  onRecordExpense?: (expense: any) => void;
+  onRecordExpense?: (data: { description: string; amount: number; category: string; accountId: string; recipientId?: string }) => void;
 }
 
 export interface InventoryViewProps {

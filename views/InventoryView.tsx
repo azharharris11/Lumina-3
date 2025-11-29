@@ -99,17 +99,18 @@ const InventoryView: React.FC<InventoryViewProps> = ({ assets, users, onAddAsset
       }
   };
 
-  const handleDelete = (asset: Asset) => {
+  const handleDelete = async (asset: Asset) => {
       setActiveMenu(null);
       
       if (!window.confirm(`Permanently delete '${asset.name}'?`)) return;
 
-      if (asset.status === 'IN_USE') {
-          alert(`Cannot delete '${asset.name}' because it is marked as IN USE.\n\nPlease return the item first.`);
-          return;
+      try {
+          if (onDeleteAsset) {
+              await onDeleteAsset(asset.id);
+          }
+      } catch (error: any) {
+          alert(`Failed to delete asset: ${error.message}`);
       }
-
-      if (onDeleteAsset) onDeleteAsset(asset.id);
   };
 
   const filteredAssets = assets.filter(a => {

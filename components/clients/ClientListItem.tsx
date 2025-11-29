@@ -17,12 +17,13 @@ interface ClientListItemProps {
 
 const ClientListItem: React.FC<ClientListItemProps> = ({ client, index, isSelected, spend, getCategoryColor, onSelect }) => {
     return (
-        <Motion.div
+        <Motion.button
+            type="button"
             initial={{ opacity: 0, x: -10 }}
             animate={{ opacity: 1, x: 0 }}
             transition={{ delay: index * 0.05 }}
             onClick={() => onSelect(client)}
-            className={`p-4 rounded-xl border cursor-pointer transition-all group relative overflow-hidden
+            className={`w-full text-left p-4 rounded-xl border cursor-pointer transition-all group relative overflow-hidden focus:outline-none focus-visible:ring-2 focus-visible:ring-lumina-accent
                 ${isSelected 
                     ? 'bg-lumina-highlight border-lumina-accent' 
                     : 'bg-lumina-surface border-lumina-highlight hover:border-lumina-muted'}
@@ -45,7 +46,7 @@ const ClientListItem: React.FC<ClientListItemProps> = ({ client, index, isSelect
                     </div>
                 </div>
             </div>
-        </Motion.div>
+        </Motion.button>
     );
 };
 

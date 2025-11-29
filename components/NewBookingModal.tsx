@@ -3,7 +3,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { User, Account, Booking, Client, StudioConfig, Asset, Package } from '../types';
 import { PACKAGES } from '../data';
-import { X, Search, ChevronRight, ChevronLeft, Calendar, Clock, User as UserIcon, CheckCircle2, AlertCircle, Plus, DollarSign, Briefcase, Loader2, Save } from 'lucide-react';
+import { X, Search, ChevronRight, ChevronLeft, Calendar, Clock, User as UserIcon, CheckCircle2, AlertCircle, Plus, DollarSign, Briefcase, Loader2, Save, Camera } from 'lucide-react';
 import CustomSelect from './ui/CustomSelect';
 
 interface NewBookingModalProps {
@@ -15,22 +15,24 @@ interface NewBookingModalProps {
   clients?: Client[]; 
   assets?: Asset[]; 
   config: StudioConfig; 
-  onAddBooking?: (booking: Booking, paymentDetails?: { amount: number, accountId: string }) => void;
+  onAddBooking?: (booking: Booking, paymentDetails?: { amount: number, accountId: string }) => Promise<void>;
   onAddClient?: (client: Client) => void; 
   initialData?: { date: string, time: string, studio: string };
   googleToken?: string | null;
   packages?: Package[];
 }
 
-const NewBookingModal: React.FC<NewBookingModalProps> = ({ isOpen, onClose, photographers, accounts, bookings = [], clients = [], config, onAddBooking, onAddClient, initialData, packages = [], googleToken }) => {
+const NewBookingModal: React.FC<NewBookingModalProps> = ({ isOpen, onClose, photographers, accounts, bookings = [], clients = [], config, onAddBooking, onAddClient, initialData, packages = [], googleToken, assets = [] }) => {
   const [step, setStep] = useState(1);
   const [clientSearch, setClientSearch] = useState('');
   const [selectedClient, setSelectedClient] = useState<Client | null>(null);
   const [isCreatingClient, setIsCreatingClient] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
   
   const DRAFT_KEY = 'lumina_booking_draft';
 
+  // TIMEZONE FIX: Get Local Date correctly
   const getLocalDateString = () => {
       const now = new Date();
       const offset = now.getTimezoneOffset() * 60000;
@@ -85,6 +87,7 @@ const NewBookingModal: React.FC<NewBookingModalProps> = ({ isOpen, onClose, phot
         }
         
         setIsSubmitting(false);
+        setSubmitError(null);
     }
   }, [isOpen, initialData, googleToken]);
 
@@ -108,30 +111,81 @@ const NewBookingModal: React.FC<NewBookingModalProps> = ({ isOpen, onClose, phot
   const filteredClients = clients.filter(c => c.name.toLowerCase().includes(clientSearch.toLowerCase()) || c.phone.includes(clientSearch));
   const availablePackages = config.site?.showPricing ? (packages.length > 0 ? packages : PACKAGES) : (packages.length > 0 ? packages : PACKAGES);
 
+  // --- ROBUST CONFLICT DETECTION (Client Side Preview) ---
   const conflictError = useMemo(() => {
-      if (!bookingForm.date || !bookingForm.timeStart || !bookingForm.studio) return null;
+      if (!bookingForm.date || !bookingForm.timeStart || !bookingForm.studio || !bookingForm.packageId) return null;
 
+      const bufferMins = config.bufferMinutes || 0;
       const [newStartH, newStartM] = bookingForm.timeStart.split(':').map(Number);
+      
+      // Calculate Proposed Time Range (Minutes from midnight)
       const newStartMins = newStartH * 60 + newStartM;
-      const newEndMins = newStartMins + (bookingForm.duration * 60);
+      // End time includes duration AND buffer to ensure cleaning/prep time
+      const newEndMins = newStartMins + (bookingForm.duration * 60) + bufferMins; 
 
-      const conflictingBooking = bookings.find(b => {
-          if (b.status === 'CANCELLED') return false;
-          if (b.date !== bookingForm.date) return false;
-          if (b.studio !== bookingForm.studio) return false;
+      // 1. CHECK ROOM CONFLICTS
+      const roomConflict = bookings.find(b => {
+          if (b.status === 'CANCELLED' || b.date !== bookingForm.date || b.studio !== bookingForm.studio) return false;
 
           const [bStartH, bStartM] = b.timeStart.split(':').map(Number);
           const bStartMins = bStartH * 60 + bStartM;
-          const bEndMins = bStartMins + (b.duration * 60);
+          // Existing booking also claims its buffer time
+          const bEndMins = bStartMins + (b.duration * 60) + bufferMins;
 
+          // Overlap logic: (StartA < EndB) and (EndA > StartB)
           return (newStartMins < bEndMins) && (newEndMins > bStartMins);
       });
 
-      if (conflictingBooking) {
-          return `Time conflict with ${conflictingBooking.clientName} (${conflictingBooking.timeStart} - ${conflictingBooking.duration}h) in ${conflictingBooking.studio}`;
+      if (roomConflict) {
+          return `Room occupied by ${roomConflict.clientName} until ${formatMinsToTime(
+              parseTime(roomConflict.timeStart) + (roomConflict.duration * 60) + bufferMins
+          )} (incl. ${bufferMins}m buffer)`;
       }
+
+      // 2. CHECK ASSET CONFLICTS (Equipment Double Booking)
+      const selectedPkg = availablePackages.find(p => p.id === bookingForm.packageId);
+      const requiredAssetIds = selectedPkg?.defaultAssetIds || [];
+
+      if (requiredAssetIds.length > 0) {
+          // Find other bookings happening at the same time (ANY room)
+          const concurrentBookings = bookings.filter(b => {
+              if (b.status === 'CANCELLED' || b.date !== bookingForm.date) return false;
+              const [bStartH, bStartM] = b.timeStart.split(':').map(Number);
+              const bStartMins = bStartH * 60 + bStartM;
+              const bEndMins = bStartMins + (b.duration * 60) + bufferMins;
+              return (newStartMins < bEndMins) && (newEndMins > bStartMins);
+          });
+
+          for (const booking of concurrentBookings) {
+              const bPkg = packages.find(p => p.name === booking.package);
+              
+              if (bPkg && bPkg.defaultAssetIds) {
+                  const conflictAssets = requiredAssetIds.filter(id => bPkg.defaultAssetIds?.includes(id));
+                  
+                  if (conflictAssets.length > 0) {
+                      const assetNames = assets
+                          .filter(a => conflictAssets.includes(a.id))
+                          .map(a => a.name)
+                          .join(', ');
+                      return `Equipment Conflict: ${assetNames} is being used in ${booking.studio}`;
+                  }
+              }
+          }
+      }
+
       return null;
-  }, [bookingForm, bookings]);
+  }, [bookingForm, bookings, config.bufferMinutes, availablePackages, packages, assets]);
+
+  // Helpers for time calc display
+  function parseTime(t: string) {
+      const [h, m] = t.split(':').map(Number);
+      return h * 60 + m;
+  }
+  function formatMinsToTime(totalMins: number) {
+      const h = Math.floor(totalMins / 60) % 24;
+      const m = totalMins % 60;
+      return `${h.toString().padStart(2,'0')}:${m.toString().padStart(2,'0')}`;
+  }
 
 
   const handleCreateClient = () => {
@@ -143,7 +197,7 @@ const NewBookingModal: React.FC<NewBookingModalProps> = ({ isOpen, onClose, phot
               email: newClientForm.email,
               category: newClientForm.category,
               notes: '',
-              joinedDate: new Date().toISOString(),
+              joinedDate: getLocalDateString(), // Timezone fix
               avatar: `https://ui-avatars.com/api/?name=${newClientForm.name}&background=random`
           };
           onAddClient(newClient);
@@ -184,6 +238,7 @@ const NewBookingModal: React.FC<NewBookingModalProps> = ({ isOpen, onClose, phot
           }
 
           setIsSubmitting(true);
+          setSubmitError(null);
 
           const selectedPkg = availablePackages.find(p => p.id === bookingForm.packageId) || { name: 'Custom', features: [] };
           
@@ -219,11 +274,13 @@ const NewBookingModal: React.FC<NewBookingModalProps> = ({ isOpen, onClose, phot
           };
 
           try {
+              // This is now an async operation that checks for conflicts on server
               await onAddBooking(newBooking, paymentForm.amount > 0 ? paymentForm : undefined);
               localStorage.removeItem(DRAFT_KEY);
               onClose();
-          } catch (e) {
-              console.error("Submission failed inside modal:", e);
+          } catch (e: any) {
+              console.error("Submission failed:", e);
+              setSubmitError(e.message || "Failed to create booking. Please try again.");
           } finally {
               setIsSubmitting(false);
           }
@@ -295,6 +352,13 @@ const NewBookingModal: React.FC<NewBookingModalProps> = ({ isOpen, onClose, phot
             </div>
 
             <div className="flex-1 overflow-y-auto custom-scrollbar p-6 lg:p-8">
+                {submitError && (
+                    <div className="mb-4 p-4 bg-rose-500/10 border border-rose-500/30 rounded-xl flex items-center gap-3 text-rose-400">
+                        <AlertCircle size={20} />
+                        <span className="text-sm font-bold">{submitError}</span>
+                    </div>
+                )}
+
                 <AnimatePresence mode="wait">
                     
                     {/* STEP 1: CLIENT */}
@@ -360,7 +424,13 @@ const NewBookingModal: React.FC<NewBookingModalProps> = ({ isOpen, onClose, phot
                                                     <h4 className="font-bold text-white text-sm">{pkg.name}</h4>
                                                     {bookingForm.packageId === pkg.id && <CheckCircle2 size={16} className="text-lumina-accent"/>}
                                                 </div>
-                                                <p className="text-xs text-lumina-muted mb-3 line-clamp-2">{pkg.features.join(', ')}</p>
+                                                <p className="text-xs text-lumina-muted mb-3 line-clamp-2">{pkg.features.slice(0, 2).join(', ')}</p>
+                                                {/* Show Asset Requirement Indicator */}
+                                                {pkg.defaultAssetIds && pkg.defaultAssetIds.length > 0 && (
+                                                    <div className="text-[10px] text-lumina-muted flex items-center gap-1 mb-2">
+                                                        <Camera size={10} /> Requires Equipment
+                                                    </div>
+                                                )}
                                                 <div className="flex justify-between items-end border-t border-white/5 pt-3">
                                                     <span className="text-[10px] font-bold bg-lumina-surface px-2 py-1 rounded text-white">{pkg.duration} Hours</span>
                                                     <span className="text-sm font-mono text-lumina-accent font-bold">Rp {(pkg.price/1000).toFixed(0)}k</span>
@@ -397,11 +467,17 @@ const NewBookingModal: React.FC<NewBookingModalProps> = ({ isOpen, onClose, phot
                                                 />
                                             </div>
                                         </div>
+                                        
+                                        {/* CONFLICT ERROR DISPLAY */}
                                         {conflictError && (
-                                            <div className="p-3 bg-rose-500/10 border border-rose-500/30 rounded-lg flex items-start gap-2">
+                                            <motion.div 
+                                                initial={{ opacity: 0, y: -10 }} 
+                                                animate={{ opacity: 1, y: 0 }}
+                                                className="p-3 bg-rose-500/10 border border-rose-500/30 rounded-lg flex items-start gap-2"
+                                            >
                                                 <AlertCircle className="text-rose-500 w-4 h-4 mt-0.5 shrink-0" />
                                                 <span className="text-xs text-rose-400 font-bold">{conflictError}</span>
-                                            </div>
+                                            </motion.div>
                                         )}
                                     </div>
 
