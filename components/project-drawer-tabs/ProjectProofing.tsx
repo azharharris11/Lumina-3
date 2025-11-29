@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
-import { Eye, RefreshCcw, HardDrive, Loader2, ImageIcon, ExternalLink } from 'lucide-react';
+import { Eye, RefreshCcw, HardDrive, Loader2, ImageIcon, ExternalLink, AlertTriangle } from 'lucide-react';
 import { Booking } from '../../types';
 
 interface DriveFile {
@@ -20,6 +20,7 @@ interface ProjectProofingProps {
 const ProjectProofing: React.FC<ProjectProofingProps> = ({ booking, googleToken, onNavigateToFiles }) => {
   const [proofingFiles, setProofingFiles] = useState<DriveFile[]>([]);
   const [isLoadingProofing, setIsLoadingProofing] = useState(false);
+  const [authError, setAuthError] = useState(false);
 
   const fetchProofingFiles = async () => {
       if (!googleToken || !booking?.deliveryUrl) return;
@@ -28,10 +29,17 @@ const ProjectProofing: React.FC<ProjectProofingProps> = ({ booking, googleToken,
       if (!folderId) return;
       
       setIsLoadingProofing(true);
+      setAuthError(false);
       try {
           const query = `'${folderId}' in parents and mimeType contains 'image/' and trashed=false`;
           const url = `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(query)}&fields=files(id,name,thumbnailLink,webViewLink,mimeType)&orderBy=createdTime desc`;
           const res = await fetch(url, { headers: { 'Authorization': `Bearer ${googleToken}` } });
+          
+          if (res.status === 401) {
+              setAuthError(true);
+              return;
+          }
+
           if (res.ok) { const data = await res.json(); setProofingFiles(data.files || []); }
       } catch (e) { console.error(e); } finally { setIsLoadingProofing(false); }
   };
@@ -54,7 +62,14 @@ const ProjectProofing: React.FC<ProjectProofingProps> = ({ booking, googleToken,
             </button>
         </div>
         
-        {!booking?.deliveryUrl ? (
+        {authError ? (
+            <div className="p-10 text-center border border-dashed border-rose-500/50 rounded-xl bg-rose-500/10">
+                <AlertTriangle size={32} className="text-rose-500 mx-auto mb-4"/>
+                <p className="text-sm text-white font-bold mb-2">Google Session Expired</p>
+                <p className="text-xs text-rose-300 mb-4">Access token is no longer valid. Please refresh your connection.</p>
+                <p className="text-[10px] text-lumina-muted">Go to Settings > Profile & Account to reconnect.</p>
+            </div>
+        ) : !booking?.deliveryUrl ? (
             <div className="p-10 text-center border border-dashed border-lumina-highlight rounded-xl bg-lumina-base/20">
                 <HardDrive size={32} className="text-lumina-muted mx-auto mb-4"/>
                 <p className="text-sm text-white font-bold mb-2">No Drive Folder Linked</p>

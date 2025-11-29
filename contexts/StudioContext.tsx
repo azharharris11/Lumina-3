@@ -2,7 +2,7 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import { 
   StudioConfig, Booking, Asset, Client, Account, Package, Transaction, Notification, 
-  OnboardingData, MonthlyMetric
+  OnboardingData, MonthlyMetric, BookingTask, ProjectStatus
 } from '../types';
 import { STUDIO_CONFIG } from '../data';
 import { db } from '../firebase';
@@ -23,7 +23,7 @@ interface StudioContextType {
   notifications: Notification[];
   metrics: MonthlyMetric[];
   loadingData: boolean;
-  users: any[]; // Add users to context
+  users: any[]; 
   
   // Actions
   updateConfig: (newConfig: StudioConfig) => Promise<void>;
@@ -42,6 +42,9 @@ interface StudioContextType {
   completeOnboarding: (data: OnboardingData) => Promise<void>;
   transferFunds: (fromId: string, toId: string, amount: number) => Promise<void>;
   
+  // Automation
+  triggerAutomation: (status: ProjectStatus, bookingId?: string) => Promise<void>;
+
   // Helpers
   addNotification: (notif: Partial<Notification>) => void;
   dismissNotification: (id: string) => void;
@@ -61,7 +64,7 @@ export const StudioProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [metrics, setMetrics] = useState<MonthlyMetric[]>([]);
-  const [users, setUsers] = useState<any[]>([]); // New Users State
+  const [users, setUsers] = useState<any[]>([]); 
   const [loadingData, setLoadingData] = useState(true);
 
   // Notification Helper
@@ -91,13 +94,13 @@ export const StudioProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         return;
     }
 
-    const ownerId = currentUser.role === 'OWNER' ? currentUser.id : currentUser.id; // Simplified logic
+    const ownerId = currentUser.role === 'OWNER' ? currentUser.id : currentUser.id; 
     
     // Config
     const configRef = doc(db, "studios", ownerId);
     const unsubConfig = onSnapshot(configRef, (doc) => { if (doc.exists()) setConfig(doc.data() as StudioConfig); });
 
-    // Users (Team) - Fetching all users for simplicity (security rules apply in real app)
+    // Users
     const qUsers = query(collection(db, "users"));
     const unsubUsers = onSnapshot(qUsers, (snap) => setUsers(snap.docs.map(d => d.data())));
 
@@ -105,15 +108,16 @@ export const StudioProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     const today = new Date();
     const startRange = new Date(); startRange.setMonth(today.getMonth() - 6);
     const endRange = new Date(); endRange.setMonth(today.getMonth() + 6);
+    const startStr = startRange.toISOString().split('T')[0];
+    const endStr = endRange.toISOString().split('T')[0];
     
     const qBookings = query(
         collection(db, "bookings"), 
-        where("ownerId", "==", ownerId),
-        where("date", ">=", startRange.toISOString().split('T')[0]),
-        where("date", "<=", endRange.toISOString().split('T')[0])
+        where("ownerId", "==", ownerId)
     );
     const unsubBookings = onSnapshot(qBookings, (snap) => {
-        setBookings(snap.docs.map(d => d.data() as Booking));
+        const allBookings = snap.docs.map(d => d.data() as Booking);
+        setBookings(allBookings.filter(b => b.date >= startStr && b.date <= endStr));
     });
 
     // Other Collections
@@ -157,7 +161,6 @@ export const StudioProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       setConfig(newConfig);
   };
 
-  // --- HELPER: SERVER SIDE CONFLICT CHECK ---
   const checkConflictOnServer = async (newBooking: Booking) => {
       if (!currentUser) return false;
       const ownerId = currentUser.id;
@@ -193,11 +196,23 @@ export const StudioProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       if (!currentUser) return;
       const ownerId = currentUser.id;
       
+      const selectedPackage = packages.find(p => p.name === newBooking.package);
+      let autoTasks: BookingTask[] = [];
+      
+      if (selectedPackage && selectedPackage.defaultTasks) {
+          autoTasks = selectedPackage.defaultTasks.map((title, idx) => ({
+              id: `t-${Date.now()}-${idx}`,
+              title: title,
+              completed: false
+          }));
+      }
+
       const bookingWithAuth: Booking = { 
           ...newBooking, 
           ownerId: ownerId, 
           paidAmount: paymentDetails?.amount || 0, 
-          photographerId: newBooking.photographerId || ownerId 
+          photographerId: newBooking.photographerId || ownerId,
+          tasks: autoTasks.length > 0 ? autoTasks : newBooking.tasks 
       };
 
       try {
@@ -242,14 +257,62 @@ export const StudioProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   };
 
   const updateBooking = async (b: Booking) => {
-      await setDoc(doc(db, "bookings", b.id), b);
+      const oldBooking = bookings.find(old => old.id === b.id);
+      let bookingToSave = { ...b };
+
+      if (oldBooking && oldBooking.status !== b.status) {
+          // Find matching automation rule from Settings
+          const automation = config.workflowAutomations?.find(a => a.triggerStatus === b.status);
+          
+          if (automation && automation.tasks && automation.tasks.length > 0) {
+              const newTasks: BookingTask[] = automation.tasks.map((t, idx) => ({
+                  id: `at-${Date.now()}-${idx}`,
+                  title: t,
+                  completed: false
+              }));
+              
+              bookingToSave.tasks = [...(bookingToSave.tasks || []), ...newTasks];
+              
+              addNotification({ 
+                  type: 'INFO', 
+                  title: 'Workflow Automation', 
+                  message: `Added ${newTasks.length} tasks for ${b.status} stage.` 
+              });
+          }
+      }
+
+      await setDoc(doc(db, "bookings", b.id), bookingToSave);
+  };
+
+  // --- MANUAL TRIGGER FOR TESTING AUTOMATIONS ---
+  const triggerAutomation = async (status: ProjectStatus, bookingId?: string) => {
+      const automation = config.workflowAutomations?.find(a => a.triggerStatus === status);
+      
+      if (!automation) {
+          addNotification({ type: 'WARNING', title: 'No Automation Found', message: `No rules set for ${status}` });
+          return;
+      }
+
+      if (bookingId) {
+          // Apply to specific booking
+          const booking = bookings.find(b => b.id === bookingId);
+          if (booking) {
+              const newTasks: BookingTask[] = automation.tasks.map((t, idx) => ({
+                  id: `man-${Date.now()}-${idx}`,
+                  title: t,
+                  completed: false
+              }));
+              await updateBooking({ ...booking, tasks: [...(booking.tasks || []), ...newTasks] });
+              addNotification({ type: 'SUCCESS', title: 'Automation Applied', message: `Applied ${automation.tasks.length} tasks to ${booking.clientName}` });
+          }
+      } else {
+          // Just simulate the feedback for testing
+          addNotification({ type: 'SUCCESS', title: 'Test Successful', message: `Found ${automation.tasks.length} tasks configured for ${status}` });
+      }
   };
 
   const deleteBooking = async (id: string) => {
       try {
-          // Cascade delete transactions linked to this booking
-          // Note: In a real app, this should reverse the balance effect on accounts too. 
-          // For simplicity here, we just remove the transaction records to keep ledger clean.
           const relatedTransactions = transactions.filter(t => t.bookingId === id);
           const batch = writeBatch(db);
           
@@ -458,6 +521,7 @@ export const StudioProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         addAsset, updateAsset, deleteAsset,
         addTransaction, deleteTransaction, settleBooking, transferFunds,
         completeOnboarding,
+        triggerAutomation, 
         addNotification, dismissNotification
     }}>
       {children}

@@ -2,7 +2,8 @@
 import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { User, Role } from '../../types';
-import { X } from 'lucide-react';
+import { X, Upload, Loader2 } from 'lucide-react';
+import { uploadFile } from '../../utils/storageUtils';
 
 const Motion = motion as any;
 
@@ -16,8 +17,9 @@ interface TeamMemberModalProps {
 
 const TeamMemberModal: React.FC<TeamMemberModalProps> = ({ isOpen, isEdit, initialData, onClose, onSave }) => {
     const [userForm, setUserForm] = useState<Partial<User>>({
-        name: '', email: '', phone: '', role: 'PHOTOGRAPHER', status: 'ACTIVE', specialization: ''
+        name: '', email: '', phone: '', role: 'PHOTOGRAPHER', status: 'ACTIVE', specialization: '', avatar: ''
     });
+    const [isUploading, setIsUploading] = useState(false);
 
     useEffect(() => {
         if (isOpen) {
@@ -28,7 +30,28 @@ const TeamMemberModal: React.FC<TeamMemberModalProps> = ({ isOpen, isEdit, initi
     if (!isOpen) return null;
 
     const handleSave = () => {
-        onSave(userForm);
+        const finalData = {
+            ...userForm,
+            // Fallback avatar if upload failed or wasn't used
+            avatar: userForm.avatar || `https://ui-avatars.com/api/?name=${userForm.name}&background=random`
+        };
+        onSave(finalData);
+    };
+
+    const handleAvatarUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        if (e.target.files && e.target.files[0]) {
+            setIsUploading(true);
+            try {
+                const file = e.target.files[0];
+                // Upload to 'avatars' folder
+                const url = await uploadFile(file, 'avatars');
+                setUserForm(prev => ({ ...prev, avatar: url }));
+            } catch (error) {
+                alert("Failed to upload image. Please try again.");
+            } finally {
+                setIsUploading(false);
+            }
+        }
     };
 
     return (
@@ -47,6 +70,25 @@ const TeamMemberModal: React.FC<TeamMemberModalProps> = ({ isOpen, isEdit, initi
                 </div>
                 
                 <div className="space-y-4 max-h-[60vh] overflow-y-auto custom-scrollbar pr-2">
+                    {/* Avatar Upload */}
+                    <div className="flex items-center gap-4">
+                        <div className="relative w-20 h-20 rounded-full bg-lumina-base border border-lumina-highlight overflow-hidden shrink-0 group">
+                            {userForm.avatar ? (
+                                <img src={userForm.avatar} alt="Avatar" className="w-full h-full object-cover" />
+                            ) : (
+                                <div className="w-full h-full flex items-center justify-center text-lumina-muted text-xs">No Img</div>
+                            )}
+                            <label className="absolute inset-0 bg-black/50 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer">
+                                {isUploading ? <Loader2 className="animate-spin text-white w-6 h-6"/> : <Upload className="text-white w-6 h-6"/>}
+                                <input type="file" accept="image/*" className="hidden" onChange={handleAvatarUpload} disabled={isUploading}/>
+                            </label>
+                        </div>
+                        <div className="flex-1">
+                            <p className="text-sm font-bold text-white">Profile Photo</p>
+                            <p className="text-xs text-lumina-muted">Click image to upload. Max 5MB.</p>
+                        </div>
+                    </div>
+
                     <div>
                         <label className="block text-xs text-lumina-muted mb-1 font-bold">Full Name</label>
                         <input type="text" className="w-full bg-lumina-base border border-lumina-highlight rounded-lg p-2 text-white"
@@ -104,7 +146,9 @@ const TeamMemberModal: React.FC<TeamMemberModalProps> = ({ isOpen, isEdit, initi
 
                 <div className="mt-6 flex justify-end gap-2">
                     <button onClick={onClose} className="px-4 py-2 text-lumina-muted font-bold">Cancel</button>
-                    <button onClick={handleSave} className="px-6 py-2 bg-lumina-accent text-lumina-base font-bold rounded-lg">{isEdit ? 'Save Changes' : 'Add Member'}</button>
+                    <button onClick={handleSave} disabled={isUploading} className="px-6 py-2 bg-lumina-accent text-lumina-base font-bold rounded-lg disabled:opacity-50">
+                        {isUploading ? 'Uploading...' : isEdit ? 'Save Changes' : 'Add Member'}
+                    </button>
                 </div>
             </Motion.div>
         </div>

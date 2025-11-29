@@ -1,7 +1,8 @@
 
 import React, { useState } from 'react';
 import { StudioConfig, StudioRoom } from '../../types';
-import { DollarSign, CreditCard as BankIcon, FileText, Tag, Clock, Trash2, X } from 'lucide-react';
+import { DollarSign, CreditCard as BankIcon, FileText, Tag, Clock, Trash2, X, Upload, Loader2, Image as ImageIcon } from 'lucide-react';
+import { uploadFile } from '../../utils/storageUtils';
 
 interface GeneralTabProps {
     config: StudioConfig;
@@ -16,6 +17,7 @@ const GeneralTab: React.FC<GeneralTabProps> = ({ config, setConfig, onSave, onUp
     const [newExpenseCat, setNewExpenseCat] = useState('');
     const [newAssetCat, setNewAssetCat] = useState('');
     const [newClientCat, setNewClientCat] = useState('');
+    const [isUploadingLogo, setIsUploadingLogo] = useState(false);
 
     const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
         const { name, value } = e.target;
@@ -37,6 +39,23 @@ const GeneralTab: React.FC<GeneralTabProps> = ({ config, setConfig, onSave, onUp
         const updatedConfig = { ...config, rooms: (config.rooms || []).filter(r => r.id !== id) };
         setConfig(updatedConfig);
         onUpdateConfig(updatedConfig);
+    };
+
+    const handleLogoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        if (e.target.files && e.target.files[0]) {
+            setIsUploadingLogo(true);
+            try {
+                const file = e.target.files[0];
+                const url = await uploadFile(file, 'studio-assets', 'logo');
+                setConfig({ ...config, logoUrl: url });
+                // Note: User still needs to click "Save Changes" to persist to Firestore, or we could call onUpdateConfig here.
+                // For UX consistency with other fields, we let them click Save.
+            } catch (error) {
+                alert("Failed to upload logo.");
+            } finally {
+                setIsUploadingLogo(false);
+            }
+        }
     };
 
     const addCategory = (listName: 'expenseCategories' | 'assetCategories' | 'clientCategories', value: string, setter: (v: string) => void) => {
@@ -65,7 +84,29 @@ const GeneralTab: React.FC<GeneralTabProps> = ({ config, setConfig, onSave, onUp
                     <div><label className="block text-xs text-lumina-muted mb-1 font-bold">Address</label><input name="address" value={config.address} onChange={handleChange} className="w-full bg-lumina-base border border-lumina-highlight rounded-lg p-3 text-white"/></div>
                     <div><label className="block text-xs text-lumina-muted mb-1 font-bold">Phone</label><input name="phone" value={config.phone} onChange={handleChange} className="w-full bg-lumina-base border border-lumina-highlight rounded-lg p-3 text-white"/></div>
                     <div><label className="block text-xs text-lumina-muted mb-1 font-bold">Website</label><input name="website" value={config.website} onChange={handleChange} className="w-full bg-lumina-base border border-lumina-highlight rounded-lg p-3 text-white"/></div>
-                    <div><label className="block text-xs text-lumina-muted mb-1 font-bold">Logo URL</label><input name="logoUrl" value={config.logoUrl || ''} onChange={handleChange} className="w-full bg-lumina-base border border-lumina-highlight rounded-lg p-3 text-white" placeholder="https://..."/></div>
+                    
+                    {/* Logo Upload Section */}
+                    <div>
+                        <label className="block text-xs text-lumina-muted mb-1 font-bold">Studio Logo</label>
+                        <div className="flex items-center gap-4 p-3 border border-lumina-highlight rounded-lg bg-lumina-base">
+                            <div className="w-12 h-12 bg-lumina-surface rounded flex items-center justify-center overflow-hidden border border-lumina-highlight shrink-0">
+                                {config.logoUrl ? (
+                                    <img src={config.logoUrl} alt="Logo" className="w-full h-full object-contain" />
+                                ) : (
+                                    <ImageIcon className="text-lumina-muted" size={20} />
+                                )}
+                            </div>
+                            <div className="flex-1">
+                                <label className="cursor-pointer inline-flex items-center gap-2 px-3 py-2 bg-lumina-surface hover:bg-lumina-highlight text-white text-xs font-bold rounded-lg transition-colors border border-lumina-highlight">
+                                    {isUploadingLogo ? <Loader2 size={14} className="animate-spin"/> : <Upload size={14}/>}
+                                    {isUploadingLogo ? 'Uploading...' : 'Upload Logo'}
+                                    <input type="file" accept="image/*" className="hidden" onChange={handleLogoUpload} disabled={isUploadingLogo} />
+                                </label>
+                                <p className="text-[10px] text-lumina-muted mt-1">Recommended: PNG/SVG, max 2MB.</p>
+                            </div>
+                        </div>
+                    </div>
+
                     <div><label className="block text-xs text-lumina-muted mb-1 font-bold">Invoice Prefix</label><input name="invoicePrefix" value={config.invoicePrefix || ''} onChange={handleChange} placeholder="e.g. LUM" className="w-full bg-lumina-base border border-lumina-highlight rounded-lg p-3 text-white"/></div>
                 </div>
             </div>

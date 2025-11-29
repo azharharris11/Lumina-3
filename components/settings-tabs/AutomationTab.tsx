@@ -1,7 +1,8 @@
 
 import React, { useState } from 'react';
 import { StudioConfig, WorkflowAutomation, ProjectStatus } from '../../types';
-import { X, Trash2 } from 'lucide-react';
+import { X, Trash2, Play } from 'lucide-react';
+import { useStudio } from '../../contexts/StudioContext';
 
 interface AutomationTabProps {
     config: StudioConfig;
@@ -10,6 +11,7 @@ interface AutomationTabProps {
 }
 
 const AutomationTab: React.FC<AutomationTabProps> = ({ config, setConfig, onUpdateConfig }) => {
+    const { triggerAutomation } = useStudio();
     const [newAutomation, setNewAutomation] = useState<Partial<WorkflowAutomation>>({ triggerStatus: 'SHOOTING', tasks: [] });
     const [taskInput, setTaskInput] = useState('');
 
@@ -39,6 +41,12 @@ const AutomationTab: React.FC<AutomationTabProps> = ({ config, setConfig, onUpda
     return (
         <div className="space-y-6">
             <h2 className="text-2xl font-bold text-white mb-4">Workflow Automation</h2>
+            
+            {/* Info Box */}
+            <div className="bg-blue-500/10 border border-blue-500/20 p-4 rounded-xl text-blue-200 text-sm">
+                <p><strong>Note:</strong> These automations run instantly within the app. No CLI or backend setup required.</p>
+            </div>
+
             <div className="bg-lumina-base border border-lumina-highlight rounded-xl p-6 mb-6">
                 <h3 className="font-bold text-white mb-4">Create New Rule</h3>
                 <div className="flex flex-col gap-4">
@@ -92,7 +100,16 @@ const AutomationTab: React.FC<AutomationTabProps> = ({ config, setConfig, onUpda
                             </div>
                             <p className="text-sm text-white">{automation.tasks.length} tasks will be added.</p>
                         </div>
-                        <button onClick={() => handleDeleteAutomation(automation.id)} className="text-lumina-muted hover:text-rose-500 transition-colors"><Trash2 size={18}/></button>
+                        <div className="flex items-center gap-2">
+                            <button 
+                                onClick={() => triggerAutomation(automation.triggerStatus)}
+                                className="text-xs font-bold bg-lumina-highlight hover:bg-white hover:text-black text-white px-3 py-1.5 rounded-lg flex items-center gap-1 transition-colors"
+                                title="Simulate this rule"
+                            >
+                                <Play size={12} fill="currentColor"/> Test Run
+                            </button>
+                            <button onClick={() => handleDeleteAutomation(automation.id)} className="text-lumina-muted hover:text-rose-500 transition-colors p-2"><Trash2 size={18}/></button>
+                        </div>
                     </div>
                 ))}
                 {(!config.workflowAutomations || config.workflowAutomations.length === 0) && (

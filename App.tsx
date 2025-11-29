@@ -77,7 +77,12 @@ const App: React.FC = () => {
   const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false);
   const [bookingPrefill, setBookingPrefill] = useState<{date: string, time: string, studio: string} | undefined>(undefined);
   
-  const [googleToken, setGoogleToken] = useState<string | null>(() => sessionStorage.getItem('lumina_g_token'));
+  // Initialize Google Token (Persistent Mode)
+  const [googleToken, setGoogleToken] = useState<string | null>(() => {
+      // We no longer check for expiry time here to prevent annoying auto-logouts.
+      // We will let the API call fail (401) if the token is actually invalid.
+      return localStorage.getItem('lumina_g_token');
+  });
   
   // Public Site Logic
   const [portalBooking, setPortalBooking] = useState<Booking | null>(null);
@@ -126,8 +131,11 @@ const App: React.FC = () => {
 
   const handleSetGoogleToken = (token: string | null) => {
       setGoogleToken(token);
-      if (token) sessionStorage.setItem('lumina_g_token', token);
-      else sessionStorage.removeItem('lumina_g_token');
+      if (token) {
+          localStorage.setItem('lumina_g_token', token);
+      } else {
+          localStorage.removeItem('lumina_g_token');
+      }
   };
 
   // --- RENDERING ---

@@ -1,7 +1,8 @@
 
 import React, { useState, useRef } from 'react';
-import { FileSignature, CheckCircle2, Eraser } from 'lucide-react';
+import { FileSignature, CheckCircle2, Eraser, Loader2 } from 'lucide-react';
 import { Booking, ActivityLog } from '../../types';
+import { uploadFile, dataURLtoBlob } from '../../utils/storageUtils';
 
 interface ProjectContractProps {
   booking: Booking;
@@ -12,6 +13,7 @@ interface ProjectContractProps {
 const ProjectContract: React.FC<ProjectContractProps> = ({ booking, onUpdateBooking, createLocalLog }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [isSigning, setIsSigning] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
 
   const startDrawing = (e: React.MouseEvent) => {
       const canvas = canvasRef.current;
@@ -43,18 +45,33 @@ const ProjectContract: React.FC<ProjectContractProps> = ({ booking, onUpdateBook
       }
   };
 
-  const saveContract = () => {
+  const saveContract = async () => {
       const canvas = canvasRef.current;
       if (canvas && booking) {
-          const dataUrl = canvas.toDataURL();
-          onUpdateBooking({
-              ...booking,
-              contractStatus: 'SIGNED',
-              contractSignedDate: new Date().toISOString(),
-              contractSignature: dataUrl,
-              logs: [createLocalLog('CONTRACT_SIGNED', 'Digital signature captured'), ...(booking.logs || [])]
-          });
-          alert("Contract Signed Successfully!");
+          setIsSaving(true);
+          try {
+              // Convert Canvas to Blob
+              const dataUrl = canvas.toDataURL('image/png');
+              const blob = dataURLtoBlob(dataUrl);
+              const file = new File([blob], `signature_${booking.id}.png`, { type: 'image/png' });
+
+              // Upload to Firebase Storage
+              const downloadURL = await uploadFile(file, `contracts/${booking.id}`);
+
+              onUpdateBooking({
+                  ...booking,
+                  contractStatus: 'SIGNED',
+                  contractSignedDate: new Date().toISOString(),
+                  contractSignature: downloadURL, // Save URL, not base64
+                  logs: [createLocalLog('CONTRACT_SIGNED', 'Digital signature uploaded'), ...(booking.logs || [])]
+              });
+              alert("Contract Signed Successfully!");
+          } catch (error) {
+              console.error(error);
+              alert("Failed to save signature. Please try again.");
+          } finally {
+              setIsSaving(false);
+          }
       }
   };
 
@@ -71,7 +88,7 @@ const ProjectContract: React.FC<ProjectContractProps> = ({ booking, onUpdateBook
                 <p className="text-lumina-muted text-sm">Date: {new Date(booking.contractSignedDate || '').toLocaleString()}</p>
                 {booking.contractSignature && (
                     <div className="bg-white p-4 rounded-lg mt-4">
-                        <img src={booking.contractSignature} alt="Signature" className="h-20"/>
+                        <img src={booking.contractSignature} alt="Signature" className="h-20 mx-auto"/>
                     </div>
                 )}
             </div>
@@ -91,8 +108,11 @@ const ProjectContract: React.FC<ProjectContractProps> = ({ booking, onUpdateBook
                     />
                 </div>
                 <div className="flex justify-between">
-                    <button onClick={clearSignature} className="flex items-center gap-2 text-lumina-muted hover:text-white text-sm"><Eraser size={14}/> Clear</button>
-                    <button onClick={saveContract} className="bg-lumina-accent text-lumina-base px-6 py-2 rounded-lg font-bold hover:bg-lumina-accent/90">Accept & Sign</button>
+                    <button onClick={clearSignature} disabled={isSaving} className="flex items-center gap-2 text-lumina-muted hover:text-white text-sm disabled:opacity-50"><Eraser size={14}/> Clear</button>
+                    <button onClick={saveContract} disabled={isSaving} className="bg-lumina-accent text-lumina-base px-6 py-2 rounded-lg font-bold hover:bg-lumina-accent/90 disabled:opacity-50 flex items-center gap-2">
+                        {isSaving && <Loader2 size={14} className="animate-spin"/>}
+                        {isSaving ? 'Signing...' : 'Accept & Sign'}
+                    </button>
                 </div>
             </div>
         )}

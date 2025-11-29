@@ -1,7 +1,8 @@
 
 import React, { useRef, useState, useMemo } from 'react';
-import { HardDrive, Plus, Upload, Loader2, Lock, MessageCircle } from 'lucide-react';
-import { Booking, User, ActivityLog } from '../../types';
+import { HardDrive, Plus, Upload, Loader2, Lock, MessageCircle, File, Trash2, Download, ExternalLink } from 'lucide-react';
+import { Booking, User, ActivityLog, BookingFile } from '../../types';
+import { uploadFile } from '../../utils/storageUtils';
 
 interface ProjectFilesProps {
   booking: Booking;
@@ -31,20 +32,52 @@ const ProjectFiles: React.FC<ProjectFilesProps> = ({ booking, currentUser, onUpd
   }, [booking]);
 
   const handleUploadClick = () => { 
-      if (!booking?.deliveryUrl) { 
-          alert("Please link a Google Drive folder first."); 
-          return; 
-      } 
       fileInputRef.current?.click(); 
   };
 
-  const handleUploadToDrive = async (e: React.ChangeEvent<HTMLInputElement>) => {
-      // Placeholder for actual upload logic
-      setIsUploading(true);
-      setTimeout(() => {
-          setIsUploading(false);
-          alert("File upload simulation complete. In a real app, this streams to the linked Drive folder.");
-      }, 2000);
+  const handleUploadToStorage = async (e: React.ChangeEvent<HTMLInputElement>) => {
+      if (e.target.files && e.target.files[0]) {
+          setIsUploading(true);
+          try {
+              const file = e.target.files[0];
+              // Upload to Firebase Storage: projects/{bookingId}/{filename}
+              const url = await uploadFile(file, `projects/${booking.id}`, file.name);
+              
+              const newFile: BookingFile = {
+                  id: `f-${Date.now()}`,
+                  name: file.name,
+                  url: url,
+                  type: 'DELIVERABLE',
+                  uploadedAt: new Date().toISOString()
+              };
+
+              const updatedFiles = [...(booking.files || []), newFile];
+              
+              onUpdateBooking({ 
+                  ...booking, 
+                  files: updatedFiles,
+                  logs: [createLocalLog('UPLOAD', `Uploaded file: ${file.name}`), ...(booking.logs || [])]
+              });
+
+          } catch (error) {
+              console.error("Upload failed", error);
+              alert("Upload failed. Please try again.");
+          } finally {
+              setIsUploading(false);
+              // Reset input
+              if (fileInputRef.current) fileInputRef.current.value = '';
+          }
+      }
+  };
+
+  const handleDeleteFile = (fileId: string) => {
+      if(window.confirm("Delete this file?")) {
+          const updatedFiles = (booking.files || []).filter(f => f.id !== fileId);
+          onUpdateBooking({
+              ...booking,
+              files: updatedFiles
+          });
+      }
   };
 
   const handleQuickWhatsApp = () => { 
@@ -88,25 +121,54 @@ const ProjectFiles: React.FC<ProjectFilesProps> = ({ booking, currentUser, onUpd
                 </div>
             </div>
 
+            {/* Uploaded Files List */}
+            <div className="mb-6 space-y-2">
+                <h4 className="text-xs font-bold text-lumina-muted uppercase mb-2">Uploaded Deliverables</h4>
+                {(!booking.files || booking.files.length === 0) && (
+                    <p className="text-sm text-lumina-muted/50 italic">No files uploaded directly.</p>
+                )}
+                {booking.files?.map((file) => (
+                    <div key={file.id} className="flex items-center justify-between p-3 bg-lumina-base/50 border border-lumina-highlight rounded-lg group">
+                        <div className="flex items-center gap-3 overflow-hidden">
+                            <div className="p-2 bg-lumina-surface rounded text-lumina-accent">
+                                <File size={16} />
+                            </div>
+                            <div className="min-w-0">
+                                <p className="text-sm font-bold text-white truncate">{file.name}</p>
+                                <p className="text-[10px] text-lumina-muted">{new Date(file.uploadedAt).toLocaleDateString()} • Direct Upload</p>
+                            </div>
+                        </div>
+                        <div className="flex items-center gap-2">
+                            <a href={file.url} target="_blank" rel="noopener noreferrer" className="p-2 hover:bg-lumina-highlight rounded text-lumina-muted hover:text-white transition-colors" title="Download">
+                                <Download size={14} />
+                            </a>
+                            <button onClick={() => handleDeleteFile(file.id)} className="p-2 hover:bg-rose-500/20 rounded text-lumina-muted hover:text-rose-500 transition-colors" title="Delete">
+                                <Trash2 size={14} />
+                            </button>
+                        </div>
+                    </div>
+                ))}
+            </div>
+
             {/* Delivery Actions */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div 
                     onClick={handleUploadClick}
-                    className="p-4 border border-dashed border-lumina-highlight rounded-xl flex flex-col items-center justify-center text-center hover:border-lumina-accent/50 transition-colors bg-lumina-base/30 h-32 cursor-pointer group relative"
+                    className={`p-4 border border-dashed border-lumina-highlight rounded-xl flex flex-col items-center justify-center text-center transition-colors bg-lumina-base/30 h-32 cursor-pointer group relative ${isUploading ? 'opacity-50 pointer-events-none' : 'hover:border-lumina-accent/50'}`}
                 >
                     <input 
                         type="file" 
                         ref={fileInputRef} 
                         className="hidden" 
-                        onChange={handleUploadToDrive} 
+                        onChange={handleUploadToStorage} 
                     />
                     {isUploading ? (
                         <Loader2 className="animate-spin text-lumina-accent mb-2" />
                     ) : (
                         <Upload className="text-lumina-muted group-hover:text-white mb-2 transition-colors" />
                     )}
-                    <p className="text-sm font-bold text-white">{isUploading ? 'Uploading to Drive...' : 'Upload Deliverables'}</p>
-                    <p className="text-xs text-lumina-muted">{isUploading ? 'Please wait' : 'Click to upload to linked Drive folder'}</p>
+                    <p className="text-sm font-bold text-white">{isUploading ? 'Uploading...' : 'Upload File'}</p>
+                    <p className="text-xs text-lumina-muted">{isUploading ? 'Please wait' : 'Click to upload to project storage'}</p>
                 </div>
                 
                 <div className="p-4 bg-lumina-base border border-lumina-highlight rounded-xl relative overflow-hidden">
@@ -118,15 +180,15 @@ const ProjectFiles: React.FC<ProjectFilesProps> = ({ booking, currentUser, onUpd
                     </div>
                     <p className="text-xs text-lumina-muted mb-4">
                         {isPaymentSettled 
-                            ? "Payment complete. You can send the download link to the client." 
-                            : "Outstanding balance detected. Download access is restricted until settled."}
+                            ? "Payment complete. You can share the portal or files." 
+                            : "Outstanding balance detected. Download access restricted."}
                     </p>
                     <button 
                         disabled={!isPaymentSettled && currentUser?.role !== 'OWNER'}
                         onClick={handleQuickWhatsApp}
                         className="w-full py-2 bg-lumina-surface border border-lumina-highlight hover:bg-lumina-highlight text-white text-xs font-bold rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
                     >
-                        {!isPaymentSettled && <Lock size={12}/>} Send Delivery Link
+                        {!isPaymentSettled && <Lock size={12}/>} Notify Client
                     </button>
                 </div>
             </div>

@@ -1,7 +1,17 @@
 
 import { initializeApp, getApps, getApp } from "firebase/app";
-import * as firebaseAuth from "firebase/auth";
+import { 
+  getAuth, 
+  onAuthStateChanged, 
+  signOut, 
+  signInWithEmailAndPassword, 
+  signInWithPopup, 
+  createUserWithEmailAndPassword, 
+  updateProfile,
+  GoogleAuthProvider
+} from "firebase/auth";
 import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager } from "firebase/firestore";
+import { getStorage } from "firebase/storage";
 
 const firebaseConfig = {
   apiKey: "AIzaSyCKfFRG53GggBNgMyEuBGy-FJKFf4Eqni8",
@@ -16,7 +26,7 @@ const firebaseConfig = {
 // Initialize Firebase
 // Singleton pattern to prevent hot-reload errors in development
 const app = !getApps().length ? initializeApp(firebaseConfig) : getApp();
-const auth = firebaseAuth.getAuth(app);
+const auth = getAuth(app);
 
 // Initialize Firestore with persistent cache settings directly (Modern Approach)
 // This replaces the deprecated enableIndexedDbPersistence() call
@@ -27,20 +37,13 @@ const db = initializeFirestore(app, {
   ignoreUndefinedProperties: true
 });
 
-const googleProvider = new firebaseAuth.GoogleAuthProvider();
-
-const { 
-  onAuthStateChanged, 
-  signOut, 
-  signInWithEmailAndPassword, 
-  signInWithPopup, 
-  createUserWithEmailAndPassword, 
-  updateProfile 
-} = firebaseAuth;
+const storage = getStorage(app);
+const googleProvider = new GoogleAuthProvider();
 
 export { 
   auth, 
   db, 
+  storage,
   googleProvider, 
   onAuthStateChanged, 
   signOut, 

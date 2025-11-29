@@ -63,7 +63,7 @@ const SettingsView: React.FC<ExtendedSettingsViewProps> = ({ packages, config, o
               callback: (tokenResponse: any) => { 
                   if (tokenResponse && tokenResponse.access_token) { 
                       if(setGoogleToken) setGoogleToken(tokenResponse.access_token); 
-                      alert("Successfully connected!"); 
+                      alert("Successfully connected! Session is active."); 
                   } 
               }, 
           }); 

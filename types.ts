@@ -444,7 +444,7 @@ export interface TeamViewProps {
   onAddUser: (user: User) => void;
   onUpdateUser: (user: User) => void;
   onDeleteUser: (id: string) => void;
-  onRecordExpense?: (data: { description: string; amount: number; category: string; accountId: string; recipientId?: string }) => void;
+  onRecordExpense?: (data: { description: string; amount: number; category: string; accountId: string; recipientId?: string; submittedBy?: string }) => void;
 }
 
 export interface InventoryViewProps {
